@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DISHA Career Lab - 5D Assessment</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', system-ui, sans-serif; }
+        .card-hover { transition: all 0.3s; }
+        .card-hover:hover { transform: translateY(-5px); box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1); }
+        .option-btn { transition: all 0.2s; }
+        .option-btn:hover { background-color: #e0e7ff; }
+        .option-btn.selected { background-color: #6366f1; color: white; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <nav class="bg-indigo-700 text-white p-4 sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto flex justify-between items-center">
+            <h1 class="text-2xl font-bold flex items-center gap-2"><span class="text-rose-600 text-3xl">🌸</span> DISHA Career Lab</h1>
+            <div class="flex gap-6 text-sm">
+                <a href="#home" onclick="navigateTo('home')" class="hover:underline">Home</a>
+                <a href="#quiz" onclick="navigateTo('quiz')" class="hover:underline">Take Quiz</a>
+                <a href="#library" onclick="navigateTo('library')" class="hover:underline">Library</a>
+                <a href="#guidance" onclick="navigateTo('guidance')" class="hover:underline">Guidance</a>
+            </div>
+        </div>
+    </nav>
+
+    <section id="home" class="max-w-6xl mx-auto px-4 py-12">
+        <div class="text-center mb-12">
+            <h2 class="text-5xl font-bold text-gray-900 mb-4">5-D Assessment for Every Student</h2>
+            <p class="text-xl text-gray-600 max-w-2xl mx-auto">Discover your strengths. Find your path. Target real Indian colleges — free.</p>
+            <div class="flex flex-col sm:flex-row justify-center gap-4 mt-8">
+                <button onclick="startQuiz(8)" class="bg-rose-600 hover:bg-rose-700 px-8 py-4 rounded-2xl text-white font-semibold text-lg flex items-center justify-center gap-2">
+                    <i class="fas fa-user"></i> Class 8-9: Stream Selection
+                </button>
+                <button onclick="startQuiz(10)" class="bg-rose-600 hover:bg-rose-700 px-8 py-4 rounded-2xl text-white font-semibold text-lg flex items-center justify-center gap-2">
+                    <i class="fas fa-graduation-cap"></i> Class 10-12: Career Planning
+                </button>
+            </div>
+
+            <div class="mt-10 text-center">
+                <a href="#library" onclick="navigateTo('library')" class="inline-flex items-center gap-2 px-6 py-3 bg-white border border-rose-200 hover:border-rose-300 rounded-3xl text-rose-600 font-medium">
+                    Explore Trending Careers &amp; Colleges →
+                </a>
+            </div>
+        </div>
+        
+        <div class="grid md:grid-cols-3 gap-8">
+            <div class="bg-white p-8 rounded-3xl shadow card-hover border border-gray-100">
+                <div class="w-12 h-12 bg-indigo-100 rounded-2xl flex items-center justify-center text-3xl mb-6">📊</div>
+                <h3 class="text-2xl font-semibold mb-3">Dynamic Assessment</h3>
+                <p class="text-gray-600">25-question quiz with real-time scoring across 4 dimensions. Instant personalized matches.</p>
+            </div>
+            <div class="bg-white p-8 rounded-3xl shadow card-hover border border-gray-100">
+                <div class="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center text-3xl mb-6">📚</div>
+                <h3 class="text-2xl font-semibold mb-3">Rich Career Library</h3>
+                <p class="text-gray-600">Curated Indian careers with streams, entrance exams, colleges &amp; scope.</p>
+            </div>
+            <div class="bg-white p-8 rounded-3xl shadow card-hover border border-gray-100">
+                <div class="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center text-3xl mb-6">🧭</div>
+                <h3 class="text-2xl font-semibold mb-3">Actionable Guidance</h3>
+                <p class="text-gray-600">Reports, tips, parent notes &amp; success paths tailored for Indian education system.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Quiz -->
+    <section id="quiz" class="max-w-4xl mx-auto px-4 py-12 bg-white hidden">
+        <div class="max-w-2xl mx-auto">
+            <div class="flex justify-between items-center mb-8">
+                <button onclick="navigateTo('home')" class="text-gray-500 hover:text-gray-700 flex items-center gap-1">
+                    <i class="fas fa-arrow-left"></i> Back
+                </button>
+                <div class="text-sm font-medium text-gray-500">Question <span id="progress" class="font-bold text-indigo-600">1</span>/25</div>
+            </div>
+            
+            <div id="quiz-container">
+                <h2 id="question-text" class="text-3xl font-semibold leading-tight mb-10 text-gray-900"></h2>
+                <div id="options-container" class="space-y-4"></div>
+            </div>
+
+            <div id="results-screen" class="hidden">
+                <h2 class="text-4xl font-bold text-center mb-8">Your Career Report</h2>
+                <div id="report" class="bg-gradient-to-br from-indigo-50 to-white border border-indigo-100 rounded-3xl p-10"></div>
+                <div class="flex flex-col sm:flex-row gap-4 justify-center mt-10">
+                    <button onclick="downloadReport()" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-4 rounded-2xl text-lg">📥 Download Full Report</button>
+                    <button onclick="restartQuiz()" class="flex-1 border border-gray-300 hover:bg-gray-50 font-semibold py-4 rounded-2xl text-lg">Retake Quiz</button>
+                </div>
+            </div>
+
+            <div class="flex justify-between mt-12 text-sm">
+                <button onclick="prevQuestion()" id="prev-btn" class="px-8 py-3 border border-gray-300 rounded-2xl hover:bg-gray-50 disabled:opacity-50" disabled>Previous</button>
+                <button onclick="nextQuestion()" id="next-btn" class="px-8 py-3 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700">Next Question →</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Library -->
+    <section id="library" class="max-w-6xl mx-auto px-4 py-12 bg-gray-100 hidden">
+        <h2 class="text-4xl font-bold text-center mb-4">Career &amp; Stream Explorer</h2>
+        <p class="text-center text-gray-600 mb-12 max-w-md mx-auto">Click on cards for more details. Filter by stream.</p>
+        
+        <div class="flex gap-3 justify-center mb-10 flex-wrap" id="stream-filters">
+            <!-- Filters populated by JS -->
+        </div>
+        <div class="relative max-w-md mx-auto mb-8">
+            <input type="text" id="search-input" onkeyup="filterLibrary()" placeholder="Search careers..." 
+                   class="w-full px-5 py-4 border border-gray-300 rounded-3xl focus:outline-none focus:border-indigo-400 text-lg">
+        </div>
+            <!-- JS populated -->
+        </div>
+        
+        <div id="library-grid" class="grid md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+    </section>
+
+    <!-- Guidance -->
+    <section id="guidance" class="max-w-4xl mx-auto px-4 py-16 hidden">
+        <h2 class="text-4xl font-bold text-center mb-12">Expert Guidance &amp; Tips</h2>
+        <div class="grid md:grid-cols-2 gap-8">
+            <div class="bg-white p-8 rounded-3xl">
+                <h3 class="font-semibold text-xl mb-6 flex items-center gap-3"><span class="text-2xl">🎯</span> For Class 8-9 Students</h3>
+                <ul class="space-y-4 text-gray-700">
+                    <li class="flex gap-3"><span class="text-emerald-500">•</span> Choose stream (Science/Commerce/Arts) based on strengths</li>
+                    <li class="flex gap-3"><span class="text-emerald-500">•</span> Focus on subjects you enjoy + aptitude</li>
+                </ul>
+            </div>
+            <div class="bg-white p-8 rounded-3xl">
+                <h3 class="font-semibold text-xl mb-6 flex items-center gap-3"><span class="text-emerald-500">🚀</span> For Class 10-12</h3>
+                <ul class="space-y-4 text-gray-700">
+                    <li class="flex gap-3"><span class="text-emerald-500">•</span> Align career with entrance exams (JEE, NEET, CLAT, CA)</li>
+                    <li class="flex gap-3"><span class="text-emerald-500">•</span> Explore emerging fields like AI, Data Science, Design</li>
+                </ul>
+            </div>
+        </div>
+        <!-- More content can be expanded -->
+    </section>
+
+    <footer class="bg-gray-900 text-gray-400 py-12 text-center">
+        <div class="max-w-6xl mx-auto px-4">
+            <p class="mb-2">Educational tool for students in India • Inspired by professional career platforms</p>
+            <p class="text-xs">All data is illustrative and for guidance purposes only.</p>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://dishacareerlab.com/sitemap.xml

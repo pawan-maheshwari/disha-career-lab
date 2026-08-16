@@ -1,5 +1,5 @@
 {
-  "notifyUrl": "PASTE_YOUR_APPS_SCRIPT_EXEC_URL_HERE",
-  "notifyKey": "PASTE_THE_SAME_SECRET_AS_SHARED_SECRET_IN_THE_SCRIPT",
+  "notifyUrl": "https://script.google.com/macros/s/AKfycbzW2rg127xTkcZzGsvZNY6etvWl6Cz_rFMkf0O7pVdGBtq_E8StRUFeEfgR3RqVmmtnqg/exec",
+  "notifyKey": "DISHA-HOOK-7f3a91c4",
   "note": "Delivery config for DISHA. Upload this beside index.html. Every visitor's browser reads it at start-up, which is what makes sign-up work on student devices."
 }

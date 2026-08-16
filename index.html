@@ -599,8 +599,14 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     payeeName: "Pawan Maheshwari",
     bankLabel: "Axis Bank 1801",
     razorpayUrl: "",
+    /* ---- OTP / receipt delivery -------------------------------------
+       Set these two once, here, and redeploy. They travel with the file,
+       so every student's device has them. Leaving them blank and instead
+       publishing disha-otp.json (see otpConfigUrl) works too. Settings
+       entered in the admin panel only ever apply to that one browser. */
     notifyUrl: "",
     notifyKey: "",
+    otpConfigUrl: "./disha-otp.json",
     supportEmail: "maheshwari1382@gmail.com",
     supportWhatsapp: "919972000744",
     codesUrl: "./promos.json",
@@ -737,6 +743,27 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         return published;
       })
       .catch(function () { published = []; return published; });
+  }
+
+  /* A published disha-otp.json lets the webhook be updated without
+     editing this file. Local admin settings win if they exist. */
+  var otpConfigPromise = null;
+  function loadOtpConfig() {
+    var c = cfg();
+    if (!c.otpConfigUrl) return Promise.resolve(null);
+    if (otpConfigPromise) return otpConfigPromise;
+    otpConfigPromise = fetch(c.otpConfigUrl, { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j) return null;
+        var saved = read(K_CFG, {});
+        /* only fill gaps -- never overwrite what an admin set here */
+        if (!saved.notifyUrl && j.notifyUrl) DEFAULT_CFG.notifyUrl = j.notifyUrl;
+        if (!saved.notifyKey && j.notifyKey) DEFAULT_CFG.notifyKey = j.notifyKey;
+        return j;
+      })
+      .catch(function () { return null; });
+    return otpConfigPromise;
   }
 
   function usedMap() { return read(K_USED, {}); }
@@ -1583,6 +1610,11 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         '<p style="font-size:13px;color:' + P.grey + ';line-height:1.6;margin:0 0 10px">New project → paste → Deploy as a Web app → execute as <strong>Me</strong>, access <strong>Anyone</strong> → copy the /exec URL into the field above. Set SHARED_SECRET to the same value as “Webhook secret”, and put your address in ADMIN_EMAIL. Until this is done the app tells students that delivery is not connected instead of pretending the code was sent.</p>' +
         "<pre>" + esc(APPS_SCRIPT) + "</pre>" +
         '<button class="dpa-btn ghost" id="dpa-copyscript" style="margin-top:10px">Copy script</button>' +
+        '<div class="dpa-note"><strong>These settings live in this browser only.</strong> A student opening the site on their own phone does not get them, and sign-up will stay blocked for everyone until the webhook ships with the site. Do one of these:<ol style="margin:8px 0 0 18px;line-height:1.7">' +
+        '<li><strong>Publish a config file</strong> — press the button below, then upload <code>disha-otp.json</code> to the same folder as <code>index.html</code>. Every visitor picks it up automatically.</li>' +
+        '<li><strong>Or edit the file</strong> — set <code>notifyUrl</code> and <code>notifyKey</code> in <code>DEFAULT_CFG</code> inside index.html and redeploy.</li>' +
+        '</ol><p style="margin:8px 0 0">Either way the webhook URL and secret become publicly readable, so anyone could call your script. Keep the Apps Script cheap to abuse: it only sends mail, and you can cap it by adding a per-address daily limit.</p></div>' +
+        '<button class="dpa-btn" id="dpa-publishotp" style="margin-top:10px">Download disha-otp.json</button>' +
         diagnosticsHtml();
 
       body.querySelector("#dpa-save").onclick = function () {
@@ -1663,6 +1695,14 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
           setTimeout(function () { b.textContent = "Send a test OTP"; render(); }, 5000);
         });
       };
+      body.querySelector("#dpa-publishotp").onclick = function () {
+        var c = cfg();
+        if (!c.notifyUrl) { alert("Add a webhook URL above and save first."); return; }
+        download("disha-otp.json", JSON.stringify({
+          notifyUrl: c.notifyUrl, notifyKey: c.notifyKey,
+          note: "Delivery config for DISHA. Upload beside index.html."
+        }, null, 2), "application/json");
+      };
       body.querySelector("#dpa-copyscript").onclick = function () {
         try { navigator.clipboard.writeText(APPS_SCRIPT); body.querySelector("#dpa-copyscript").textContent = "Copied"; } catch (e) {}
       };
@@ -1671,10 +1711,11 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 
   /* ------------------------------------------------------------------ boot */
   try { loadPublished(); } catch (e) {}
+  try { loadOtpConfig(); } catch (e) {}
 
   window.DISHA_PAY = {
     version: VER,
-    cfg: cfg, saveCfg: saveCfg,
+    cfg: cfg, saveCfg: saveCfg, loadOtpConfig: loadOtpConfig,
     codes: localCodes, saveCodes: saveCodes, published: function () { return published; },
     validate: validate, describe: describe, signedCode: signedCode,
     upiLink: upiLink, razorpayLink: razorpayLink, qrSvg: qrSvg,
@@ -2744,6 +2785,16 @@ window.DISHA_CONTENT = (function () {
   var lastDelivery = { email: null, sms: null, at: 0, code: null, admin: false };
 
   function send(opts) {
+    var s = otpSettings();
+    if (!s.webhook && window.DISHA_PAY && typeof window.DISHA_PAY.loadOtpConfig === "function") {
+      return window.DISHA_PAY.loadOtpConfig()
+        .catch(function () { return null; })
+        .then(function () { return sendNow(opts); });
+    }
+    return sendNow(opts);
+  }
+
+  function sendNow(opts) {
     opts = opts || {};
     var s = otpSettings();
     var payload = {

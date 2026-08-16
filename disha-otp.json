@@ -1,0 +1,5 @@
+{
+  "notifyUrl": "PASTE_YOUR_APPS_SCRIPT_EXEC_URL_HERE",
+  "notifyKey": "PASTE_THE_SAME_SECRET_AS_SHARED_SECRET_IN_THE_SCRIPT",
+  "note": "Delivery config for DISHA. Upload this beside index.html. Every visitor's browser reads it at start-up, which is what makes sign-up work on student devices."
+}

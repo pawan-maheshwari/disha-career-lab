@@ -1,0 +1,5 @@
+{
+  "url": "https://gjhfhvssmzapjbanekiw.supabase.co",
+  "anonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdqaGZodnNzbXphcGpiYW5la2l3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5NjUwNTMsImV4cCI6MjEwMjU0MTA1M30.PicM2uPW0v_QqwzxB4SLQZFUdDkOaoriCixsn8iSbwE",
+  "note": "Upload beside index.html to switch DISHA to the Supabase database. Delete this file to roll back to the old per-browser behaviour."
+}

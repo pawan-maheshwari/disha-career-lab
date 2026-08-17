@@ -1013,6 +1013,26 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       notify: "pending"
     };
     if (opts.promo && opts.promo.code) markUsed(opts.promo.code, user.id);
+    if (window.DISHA_CLOUD && window.DISHA_CLOUD.enabled()) {
+      var list0 = Number(opts.listAmount != null ? opts.listAmount : amount) || 0;
+      window.DISHA_CLOUD.claimPayment({
+        listAmount: list0,
+        promo: entry.promo,
+        discount: Math.max(0, list0 - amount),
+        expected: amount,
+        currency: entry.currency,
+        method: amount === 0 ? "waiver" : (/razor/i.test(entry.method) ? "razorpay" : "upi"),
+        reference: entry.reference
+      }).then(function (r) {
+        if (r && r.ok && r.receiptNo) {
+          /* prefer the database's receipt number: it cannot collide */
+          entry.receiptNo = r.receiptNo;
+          var l = ledger();
+          for (var i = l.length - 1; i >= 0; i--) if (l[i].ts === entry.ts) { l[i].receiptNo = r.receiptNo; break; }
+          saveLedger(l);
+        }
+      });
+    }
     var list = ledger();
     list.push(entry);
     saveLedger(list);
@@ -2070,11 +2090,74 @@ window.DISHA_CLOUD = (function () {
       .catch(function (e) { log("listReports", e); return []; });
   }
 
+  /* ---------------------------------------------------------- payments */
+  /* A UPI transfer cannot be confirmed from a web page, so a claim is
+     recorded as exactly that: what the student says they paid. Only an
+     admin can mark it verified, and only that unlocks the assessment. */
+  function claimPayment(p) {
+    if (!client) return Promise.resolve({ ok: false, reason: "cloud-off" });
+    return session().then(function (s) {
+      if (!s) return { ok: false, reason: "not-signed-in" };
+      return client.from("payments").insert({
+        user_id: s.user.id,
+        list_amount: Number(p.listAmount) || 0,
+        promo_code: p.promo || null,
+        discount: Number(p.discount) || 0,
+        expected: Number(p.expected) || 0,
+        currency: p.currency || "INR",
+        method: p.method || "upi",
+        reference: (p.reference || "").trim() || null,
+        status: "claimed"
+      }).select().single()
+        .then(function (res) {
+          return res.error ? { ok: false, reason: "save-failed", detail: res.error.message }
+                           : { ok: true, receiptNo: res.data.receipt_no, id: res.data.id };
+        });
+    }).catch(function (e) { return { ok: false, reason: "unreachable", detail: log("claimPayment", e).message }; });
+  }
+
+  /* Admins get every claim with the student attached; a student gets
+     only their own rows. The database decides which, not this code. */
+  function listPayments() {
+    if (!client) return Promise.resolve([]);
+    return client.from("payments_admin").select("*").order("created_at", { ascending: false })
+      .then(function (res) {
+        if (res.error) return [];
+        return (res.data || []).map(function (r) {
+          return { id: r.id, receiptNo: r.receipt_no, userId: r.user_id,
+                   name: r.name, school: r.school, city: r.city, klass: r.klass,
+                   mobile: r.mobile, email: r.email,
+                   listAmount: Number(r.list_amount), promo: r.promo_code,
+                   discount: Number(r.discount), expected: Number(r.expected),
+                   received: r.received == null ? null : Number(r.received),
+                   currency: r.currency, method: r.method, reference: r.reference,
+                   status: r.status, note: r.note,
+                   claimedAt: r.claimed_at ? new Date(r.claimed_at).getTime() : 0,
+                   verifiedAt: r.verified_at ? new Date(r.verified_at).getTime() : 0 };
+        });
+      })
+      .catch(function (e) { log("listPayments", e); return []; });
+  }
+
+  function setPaymentStatus(id, status, received, note) {
+    if (!client) return Promise.resolve({ ok: false, reason: "cloud-off" });
+    var patch = { status: status };
+    if (received != null && received !== "") patch.received = Number(received);
+    if (note != null) patch.note = note;
+    return client.from("payments").update(patch).eq("id", id).select().single()
+      .then(function (res) {
+        return res.error ? { ok: false, reason: "update-failed", detail: res.error.message }
+                         : { ok: true };
+      })
+      .catch(function (e) { return { ok: false, reason: "unreachable", detail: log("setPaymentStatus", e).message }; });
+  }
+
   return {
     ready: ready, enabled: enabled,
     sendCode: sendCode, verifyCode: verifyCode, session: session, signOut: signOut,
     me: me, saveProfile: saveProfile, listProfiles: listProfiles,
     saveReport: saveReport, listReports: listReports,
+    claimPayment: claimPayment, listPayments: listPayments, setPaymentStatus: setPaymentStatus,
     lastError: function () { return lastError; },
     config: function () { return cfg ? { url: cfg.url } : null; }
   };
@@ -2256,6 +2339,9 @@ window.DISHA_ENROL = (function () {
       '<div id="den-card"><div class="hd"><div><h2>' + T("Enrolments", "नामांकन") + "</h2>" +
       '<p class="sub">' + T("Everyone who has an account — including those who signed up or paid but never finished the assessment. Student Records shows completed reports only.",
                             "हर वह व्यक्ति जिसका खाता है — वे भी जिन्होंने साइन अप या भुगतान किया पर मूल्यांकन पूरा नहीं किया। विद्यार्थी रिकॉर्ड में केवल पूर्ण रिपोर्ट दिखती हैं।") + "</p></div>" +
+      '<div style="display:flex;gap:8px;margin:14px 0 0"><button class="den-btn ghost" id="den-tab-enrol">' +
+      T("Enrolments", "नामांकन") + '</button><button class="den-btn ghost" id="den-tab-pay">' +
+      T("Payments", "भुगतान") + '</button></div>' +
       '<button id="den-close" aria-label="Close" style="background:none;border:none;font-size:28px;line-height:1;cursor:pointer;color:' + P.ink + '">&times;</button></div>' +
       '<div id="den-body">' + T("Loading…", "लोड हो रहा है…") + "</div></div>";
 
@@ -2263,11 +2349,14 @@ window.DISHA_ENROL = (function () {
     document.addEventListener("keydown", onKey);
     overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
     overlay.querySelector("#den-close").onclick = close;
+    overlay.querySelector("#den-tab-enrol").onclick = function () { state.view = "enrol"; load(); };
+    overlay.querySelector("#den-tab-pay").onclick = function () { state.view = "pay"; loadPayments(); };
 
     load();
   }
 
   function load() {
+    if (state.view === "pay") { loadPayments(); return; }
     var db = window.DISHA_DB;
     if (!db) { render("nodb"); return; }
     if (window.DISHA_CLOUD && window.DISHA_CLOUD.enabled()) {
@@ -2501,6 +2590,150 @@ window.DISHA_ENROL = (function () {
       };
       inp.click();
     };
+  }
+
+  /* ---------------------------------------------------------------
+     PAYMENT TRACKER
+     Shows what each student SAYS they paid, next to what you have
+     confirmed. Nothing here is proof of money received — a UPI
+     transfer cannot be verified from a browser — so a row stays
+     "claimed" until you check the bank and confirm it. Confirming
+     is what unlocks the student's assessment.
+     --------------------------------------------------------------- */
+  var payState = { rows: [], loading: false, filter: "claimed" };
+
+  function money(n, cur) {
+    if (n == null || isNaN(n)) return "—";
+    return (cur === "INR" || !cur ? "\u20B9" : cur + " ") + Number(n).toLocaleString("en-IN");
+  }
+
+  function payStatusChip(s) {
+    var map = {
+      claimed:  [P.amber, T("Awaiting your check", "आपकी जाँच बाकी")],
+      verified: [P.green, T("Verified", "सत्यापित")],
+      rejected: [P.cardinal, T("Rejected", "अस्वीकृत")],
+      refunded: [P.grey, T("Refunded", "वापस किया")]
+    };
+    var m = map[s] || [P.grey, s];
+    return '<span style="color:' + m[0] + ';font-weight:800">\u25CF ' + esc(m[1]) + "</span>";
+  }
+
+  function loadPayments() {
+    if (!(window.DISHA_CLOUD && window.DISHA_CLOUD.enabled())) { payState.rows = []; renderPayments(); return; }
+    payState.loading = true; renderPayments();
+    window.DISHA_CLOUD.listPayments().then(function (rows) {
+      payState.rows = rows || []; payState.loading = false; renderPayments();
+    });
+  }
+
+  function renderPayments() {
+    if (!overlay) return;
+    var body = overlay.querySelector("#den-body");
+    if (!body) return;
+    if (!(window.DISHA_CLOUD && window.DISHA_CLOUD.enabled())) {
+      body.innerHTML = '<div class="den-note">' +
+        T("Payments are tracked in the database. This view needs the Supabase config file to be deployed.",
+          "भुगतान डेटाबेस में दर्ज होते हैं। इस दृश्य के लिए Supabase कॉन्फ़िग फ़ाइल आवश्यक है।") + "</div>";
+      return;
+    }
+    if (payState.loading) { body.innerHTML = T("Loading\u2026", "लोड हो रहा है\u2026"); return; }
+
+    var all = payState.rows;
+    var claimed = all.filter(function (r) { return r.status === "claimed"; });
+    var verified = all.filter(function (r) { return r.status === "verified"; });
+    var collected = verified.reduce(function (a, r) { return a + (r.received != null ? r.received : r.expected); }, 0);
+    var pending = claimed.reduce(function (a, r) { return a + r.expected; }, 0);
+    var rows = payState.filter === "all" ? all : all.filter(function (r) { return r.status === payState.filter; });
+
+    body.innerHTML =
+      '<div class="den-stats">' +
+      stat(all.length, T("Claims", "दावे")) +
+      stat(claimed.length, T("Awaiting check", "जाँच बाकी")) +
+      stat(verified.length, T("Verified", "सत्यापित")) +
+      stat(money(collected, "INR"), T("Confirmed received", "प्राप्त पुष्ट")) +
+      stat(money(pending, "INR"), T("Unconfirmed", "अपुष्ट")) +
+      "</div>" +
+      '<div class="den-note" style="border-left-color:' + P.amber + '">' +
+      T("A UPI transfer cannot be checked from the website. Every row below is what the student typed in. Open your bank statement, find the reference, then confirm \u2014 confirming is what unlocks their assessment.",
+        "UPI भुगतान वेबसाइट से जाँचा नहीं जा सकता। नीचे हर पंक्ति वही है जो विद्यार्थी ने भरा। अपने बैंक विवरण में संदर्भ मिलाएँ, फिर पुष्टि करें \u2014 पुष्टि करने पर ही उनका मूल्यांकन खुलता है।") +
+      "</div>" +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin:12px 0">' +
+      '<select id="pay-filter">' +
+      opt("claimed", T("Awaiting check", "जाँच बाकी"), payState.filter) +
+      opt("verified", T("Verified", "सत्यापित"), payState.filter) +
+      opt("all", T("All", "सभी"), payState.filter) +
+      "</select>" +
+      '<button class="den-btn ghost" id="pay-csv">' + T("Export CSV", "CSV निर्यात") + "</button>" +
+      '<button class="den-btn ghost" id="pay-refresh">' + T("Refresh", "ताज़ा करें") + "</button>" +
+      "</div>" +
+      '<div style="overflow-x:auto"><table><thead><tr>' +
+      ["Receipt", "Student", "Expected", "Promo", "Method", "Reference", "Status", ""]
+        .map(function (h) { return "<th>" + esc(h) + "</th>"; }).join("") +
+      "</tr></thead><tbody>" +
+      (rows.length ? rows.map(payRow).join("")
+        : '<tr><td colspan="8" style="padding:18px;color:' + P.grey + '">' +
+          T("Nothing here yet.", "अभी कुछ नहीं।") + "</td></tr>") +
+      "</tbody></table></div>";
+
+    body.querySelector("#pay-filter").onchange = function (e) { payState.filter = e.target.value; renderPayments(); };
+    body.querySelector("#pay-refresh").onclick = loadPayments;
+    body.querySelector("#pay-csv").onclick = function () {
+      var head = ["Receipt","Name","School","Class","Mobile","Email","List","Promo","Discount",
+                  "Expected","Received","Method","Reference","Status","Claimed","Verified"];
+      var lines = rows.map(function (r) {
+        return [r.receiptNo,r.name,r.school,r.klass,r.mobile,r.email,r.listAmount,r.promo,r.discount,
+                r.expected,r.received,r.method,r.reference,r.status,
+                r.claimedAt?new Date(r.claimedAt).toISOString():"",
+                r.verifiedAt?new Date(r.verifiedAt).toISOString():""]
+          .map(function (v) { return '"' + String(v == null ? "" : v).replace(/"/g,'""') + '"'; }).join(",");
+      });
+      download("disha-payments-" + new Date().toISOString().slice(0,10) + ".csv",
+               head.join(",") + "\n" + lines.join("\n"));
+    };
+    body.querySelectorAll("[data-confirm]").forEach(function (b) {
+      b.onclick = function () {
+        var id = b.getAttribute("data-confirm");
+        var row = payState.rows.filter(function (r) { return r.id === id; })[0];
+        var got = prompt(T("Amount actually received (leave as is if it matches):",
+                           "वास्तव में प्राप्त राशि (मेल खाती हो तो वैसे ही छोड़ें):"), String(row.expected));
+        if (got === null) return;
+        b.textContent = T("Saving\u2026", "सहेजा जा रहा\u2026");
+        window.DISHA_CLOUD.setPaymentStatus(id, "verified", got, null).then(function (res) {
+          if (!res.ok) alert(T("Could not update: ", "अद्यतन नहीं हुआ: ") + (res.detail || res.reason));
+          loadPayments();
+        });
+      };
+    });
+    body.querySelectorAll("[data-reject]").forEach(function (b) {
+      b.onclick = function () {
+        var id = b.getAttribute("data-reject");
+        var why = prompt(T("Reason (kept on the record):", "कारण (रिकॉर्ड में रहेगा):"), "");
+        if (why === null) return;
+        window.DISHA_CLOUD.setPaymentStatus(id, "rejected", null, why).then(loadPayments);
+      };
+    });
+  }
+
+  function payRow(r) {
+    var mismatch = r.received != null && r.received !== r.expected;
+    return "<tr><td><code>" + esc(r.receiptNo || "—") + "</code>" +
+      '<div style="font-size:11px;color:' + P.grey + '">' +
+      esc(r.claimedAt ? new Date(r.claimedAt).toLocaleDateString("en-IN") : "") + "</div></td>" +
+      "<td><strong>" + esc(r.name || "—") + "</strong>" +
+      '<div style="font-size:11px;color:' + P.grey + '">' + esc(r.school || "") + " · " + esc(r.klass || "") + "</div></td>" +
+      "<td><strong>" + esc(money(r.expected, r.currency)) + "</strong>" +
+      (r.discount ? '<div style="font-size:11px;color:' + P.grey + '">' +
+        T("was ", "पहले ") + esc(money(r.listAmount, r.currency)) + "</div>" : "") +
+      (mismatch ? '<div style="font-size:11px;color:' + P.cardinal + ';font-weight:700">' +
+        T("got ", "मिला ") + esc(money(r.received, r.currency)) + "</div>" : "") + "</td>" +
+      "<td>" + esc(r.promo || "—") + "</td>" +
+      "<td>" + esc(r.method || "") + "</td>" +
+      "<td><code>" + esc(r.reference || "—") + "</code></td>" +
+      "<td>" + payStatusChip(r.status) + "</td>" +
+      "<td>" + (r.status === "claimed"
+        ? '<button class="den-btn" data-confirm="' + esc(r.id) + '">' + T("Confirm", "पुष्टि") + "</button> " +
+          '<button class="den-btn ghost" data-reject="' + esc(r.id) + '">' + T("Reject", "अस्वीकार") + "</button>"
+        : "") + "</td></tr>";
   }
 
   function stat(v, label) {

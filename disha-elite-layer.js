@@ -1113,9 +1113,16 @@ window.DISHA_ELITE = (function () {
   }
   function onAdminKey(e) { if (e.key === "Escape") closeAdmin(); }
 
+  function narrow() {
+    try { return window.innerWidth < 720; } catch (e) { return false; }
+  }
   function adminStyles() {
-    return "position:fixed;inset:0;background:rgba(46,45,41,.55);z-index:99999;" +
-           "display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow:auto";
+    /* On a phone the console is full-bleed. The earlier centred box
+       overflowed the viewport, so the names and the search field sat
+       off-screen to the left and the page behind showed through. */
+    return "position:fixed;inset:0;background:rgba(46,45,41,.55);z-index:2147483000;" +
+           "display:flex;align-items:flex-start;justify-content:center;" +
+           "padding:" + (narrow() ? "0" : "24px") + ";overflow:auto;-webkit-overflow-scrolling:touch";
   }
 
   /* Accounts live in two places: this browser's own store, and the
@@ -1162,14 +1169,16 @@ window.DISHA_ELITE = (function () {
     adminOverlay.id = "disha-retake-admin";
     adminOverlay.setAttribute("style", adminStyles());
     adminOverlay.innerHTML =
-      '<div style="background:#fff;max-width:960px;width:100%;border-radius:8px;padding:22px 24px;' +
+      '<div style="background:#fff;max-width:960px;width:100%;box-sizing:border-box;' +
+      'border-radius:' + (narrow() ? "0" : "8px") + ';padding:' + (narrow() ? "16px 14px 40px" : "22px 24px") + ';' +
+      'min-height:' + (narrow() ? "100%" : "auto") + ';' +
       'font-family:\'Source Sans 3\',-apple-system,sans-serif;color:' + P.ink + '">' +
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">' +
       '<div><h2 style="font-family:\'Source Serif 4\',Georgia,serif;margin:0;font-size:22px;color:' + P.cardinal + '">Assessment attempts</h2>' +
       '<div style="font-size:13px;color:' + P.grey + ';margin-top:4px">Every student gets one attempt. Release a re-attempt here — the student then gets a freshly drawn paper, not the same one.</div></div>' +
       '<button id="dra-close" style="background:none;border:none;font-size:28px;line-height:1;cursor:pointer;color:' + P.ink + '">&times;</button></div>' +
       '<input id="dra-q" placeholder="Search name, school, city, mobile or email" ' +
-      'style="width:100%;margin-top:14px;padding:10px 12px;border:1px solid ' + P.hairline + ';border-radius:4px;font-size:14px">' +
+      'style="width:100%;box-sizing:border-box;margin-top:14px;padding:10px 12px;border:1px solid ' + P.hairline + ';border-radius:4px;font-size:16px">' +
       '<div id="dra-body" style="margin-top:14px"></div></div>';
     document.body.appendChild(adminOverlay);
     document.addEventListener("keydown", onAdminKey);
@@ -1201,38 +1210,70 @@ window.DISHA_ELITE = (function () {
         body.innerHTML = '<div style="color:' + P.grey + '">No student matches that search.</div>';
         return;
       }
-      var head = '<tr style="text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:' +
-        P.grey + '"><th style="padding:6px 8px">Student</th><th style="padding:6px 8px">Class · Stream</th>' +
-        '<th style="padding:6px 8px">School</th><th style="padding:6px 8px">Used / Allowed</th>' +
-        '<th style="padding:6px 8px">Action</th></tr>';
-      var trs = rows.map(function (a) {
-        var r = attRow(a.id);
+      /* A five-column table cannot fit a phone. On a narrow screen
+         each student becomes a stacked card instead, so the name and
+         the buttons are both reachable without sideways scrolling. */
+      function stateHtml(r) {
         var allowed = 1 + r.granted;
-        var state = r.used >= allowed
-          ? '<span style="color:' + P.cardinal + ';font-weight:700">' + r.used + " / " + allowed + " · closed</span>"
-          : '<span style="color:#166534;font-weight:700">' + r.used + " / " + allowed + " · open</span>";
-        return '<tr style="border-top:1px solid ' + P.hairline + '">' +
-          '<td style="padding:8px">' + esc(a.name || "—") +
-            '<div style="font-size:11px;color:' + P.grey + '">' + esc(a.mobile || a.email || "") + '</div></td>' +
-          '<td style="padding:8px;font-size:13px">' + esc(a.klass || "—") +
-            '<div style="font-size:11px;color:' + P.grey + '">' + esc(a.stream || "stream not declared") + '</div></td>' +
-          '<td style="padding:8px;font-size:13px">' + esc(a.school || "—") +
-            '<div style="font-size:11px;color:' + P.grey + '">' + esc(a.city || "") + '</div></td>' +
-          '<td style="padding:8px;font-size:13px">' + state +
-            (r.grantedBy ? '<div style="font-size:11px;color:' + P.grey + '">granted by ' + esc(r.grantedBy) + '</div>' : "") +
-          '</td>' +
-          '<td style="padding:8px;white-space:nowrap">' +
-            '<button data-grant="' + esc(a.id) + '" style="background:' + P.cardinal + ';color:#fff;border:none;border-radius:4px;padding:6px 10px;font-weight:700;font-size:12.5px;cursor:pointer">+1 re-attempt</button> ' +
-            '<button data-code="' + esc(a.id) + '" style="background:' + P.gold + ';color:#2E2D29;border:none;border-radius:4px;padding:6px 10px;font-weight:700;font-size:12.5px;cursor:pointer">Get code</button> ' +
-            '<button data-revoke="' + esc(a.id) + '" style="background:#fff;color:' + P.ink + ';border:1px solid ' + P.hairline + ';border-radius:4px;padding:6px 10px;font-size:12.5px;cursor:pointer">Revoke</button> ' +
-            '<button data-reset="' + esc(a.id) + '" style="background:#fff;color:' + P.grey + ';border:1px solid ' + P.hairline + ';border-radius:4px;padding:6px 10px;font-size:12.5px;cursor:pointer">Reset</button>' +
-          '</td></tr>';
-      }).join("");
-      body.innerHTML = '<table style="width:100%;border-collapse:collapse">' + head + trs + '</table>' +
-        '<div style="font-size:12px;color:' + P.grey + ';margin-top:12px">' +
-        '<b>+1 re-attempt</b> opens the sitting on this device. If the student signed up on their own phone, use <b>Get code</b> and read the code out to them — they enter it when they tap Retake. ' +
+        return r.used >= allowed
+          ? '<span style="color:' + P.cardinal + ';font-weight:700">' + r.used + " / " + allowed + " \u00b7 closed</span>"
+          : '<span style="color:#166534;font-weight:700">' + r.used + " / " + allowed + " \u00b7 open</span>";
+      }
+      function buttons(a) {
+        var w = narrow() ? "flex:1 1 46%;" : "";
+        return '<button data-grant="' + esc(a.id) + '" style="' + w + 'background:' + P.cardinal +
+            ';color:#fff;border:none;border-radius:4px;padding:9px 10px;font-weight:700;font-size:13px;cursor:pointer">+1 re-attempt</button>' +
+          '<button data-code="' + esc(a.id) + '" style="' + w + 'background:' + P.gold +
+            ';color:#2E2D29;border:none;border-radius:4px;padding:9px 10px;font-weight:700;font-size:13px;cursor:pointer">Get code</button>' +
+          '<button data-revoke="' + esc(a.id) + '" style="' + w + 'background:#fff;color:' + P.ink +
+            ';border:1px solid ' + P.hairline + ';border-radius:4px;padding:9px 10px;font-size:13px;cursor:pointer">Revoke</button>' +
+          '<button data-reset="' + esc(a.id) + '" style="' + w + 'background:#fff;color:' + P.grey +
+            ';border:1px solid ' + P.hairline + ';border-radius:4px;padding:9px 10px;font-size:13px;cursor:pointer">Reset</button>';
+      }
+
+      if (narrow()) {
+        body.innerHTML = rows.map(function (a) {
+          var r = attRow(a.id);
+          return '<div style="border:1px solid ' + P.hairline + ';border-radius:6px;padding:12px;margin-bottom:10px">' +
+            '<div style="font-weight:700;font-size:15px">' + esc(a.name || "\u2014") + '</div>' +
+            '<div style="font-size:12.5px;color:' + P.grey + ';margin-top:2px">' +
+              esc(a.mobile || a.email || "no contact on record") + '</div>' +
+            '<div style="font-size:12.5px;color:' + P.grey + ';margin-top:2px">' +
+              esc(a.klass || "\u2014") + ' \u00b7 ' + esc(a.stream || "stream not declared") + '</div>' +
+            '<div style="font-size:12.5px;color:' + P.grey + ';margin-top:2px">' +
+              esc(a.school || "\u2014") + (a.city ? ", " + esc(a.city) : "") + '</div>' +
+            '<div style="font-size:13px;margin-top:8px">' + stateHtml(r) +
+              (r.grantedBy ? ' <span style="font-size:11px;color:' + P.grey + '">\u00b7 granted by ' + esc(r.grantedBy) + '</span>' : "") +
+            '</div>' +
+            '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">' + buttons(a) + '</div>' +
+          '</div>';
+        }).join("");
+      } else {
+        var head = '<tr style="text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:' +
+          P.grey + '"><th style="padding:6px 8px">Student</th><th style="padding:6px 8px">Class \u00b7 Stream</th>' +
+          '<th style="padding:6px 8px">School</th><th style="padding:6px 8px">Used / Allowed</th>' +
+          '<th style="padding:6px 8px">Action</th></tr>';
+        var trs = rows.map(function (a) {
+          var r = attRow(a.id);
+          return '<tr style="border-top:1px solid ' + P.hairline + '">' +
+            '<td style="padding:8px">' + esc(a.name || "\u2014") +
+              '<div style="font-size:11px;color:' + P.grey + '">' + esc(a.mobile || a.email || "") + '</div></td>' +
+            '<td style="padding:8px;font-size:13px">' + esc(a.klass || "\u2014") +
+              '<div style="font-size:11px;color:' + P.grey + '">' + esc(a.stream || "stream not declared") + '</div></td>' +
+            '<td style="padding:8px;font-size:13px">' + esc(a.school || "\u2014") +
+              '<div style="font-size:11px;color:' + P.grey + '">' + esc(a.city || "") + '</div></td>' +
+            '<td style="padding:8px;font-size:13px">' + stateHtml(r) +
+              (r.grantedBy ? '<div style="font-size:11px;color:' + P.grey + '">granted by ' + esc(r.grantedBy) + '</div>' : "") +
+            '</td>' +
+            '<td style="padding:8px;white-space:nowrap;display:flex;gap:5px">' + buttons(a) + '</td></tr>';
+        }).join("");
+        body.innerHTML = '<table style="width:100%;border-collapse:collapse">' + head + trs + '</table>';
+      }
+
+      body.innerHTML += '<div style="font-size:12px;color:' + P.grey + ';margin-top:12px;line-height:1.55">' +
+        '<b>+1 re-attempt</b> opens the sitting on <i>this</i> device only. If the student took the assessment on their own phone, that is where their attempt is recorded \u2014 use <b>Get code</b> and send them the code instead. ' +
         'Reset clears both the used count and any grants; use it only when a sitting was abandoned or recorded in error.' +
-        '<div style="margin-top:6px">Roster source: ' + (cloudOn ? 'cloud + this device' : 'this device only — cloud is off, so students who signed up elsewhere will not appear') + '.</div></div>';
+        '<div style="margin-top:6px">Roster source: ' + (cloudOn ? 'cloud + this device' : 'this device only \u2014 cloud is off, so students who signed up elsewhere will not appear') + '.</div></div>';
 
       var who = (window.__dishaUser && window.__dishaUser.name) || "administrator";
       body.querySelectorAll("[data-grant]").forEach(function (b) {

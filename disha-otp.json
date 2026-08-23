@@ -1,5 +1,5 @@
 {
-  "notifyUrl": "https://script.google.com/macros/s/AKfycbzW2rg127xTkcZzGsvZNY6etvWl6Cz_rFMkf0O7pVdGBtq_E8StRUFeEfgR3RqVmmtnqg/exec",
-  "notifyKey": "DISHA-HOOK-7f3a91c4",
-  "note": "Delivery config for DISHA. Upload this beside index.html. Every visitor's browser reads it at start-up, which is what makes sign-up work on student devices."
+  "notifyUrl": "https://script.google.com/macros/s/AKfycbwIWmMAPAYB-ZtA8ZbtutVKQJ5ZV8HxbEk8WSxgn3d-65GoPL08qxQ-o7SBLcg0JiC10w/exec",
+  "notifyKey": "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",
+  "note": "Delivery config for DISHA. Upload beside index.html."
 }

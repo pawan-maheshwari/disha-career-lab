@@ -6453,14 +6453,74 @@ window.DISHA_ELITE = (function () {
     merge: mergeFromAccount
   };
 
+  /* ---- re-attempt codes -------------------------------------------
+     A grant issued in the administrator's browser cannot reach the
+     student's phone: the cloud "profiles" table has no attempt
+     columns, and saveProfile can only write the signed-in user's own
+     row. Until that schema is extended, the grant travels as a short
+     code the administrator reads out, the same way promo codes
+     already work here. The code is derived from the student's own
+     mobile or email, so their device can verify it offline and no
+     other student can use it.                                      */
+
+  var CODE_SALT = "DISHA-RA-2026";
+
+  function contactKey(user) {
+    var c = String((user && (user.mobile || user.email)) || "").toLowerCase().trim();
+    return c.replace(/[^a-z0-9@.]/g, "");
+  }
+  function codeFor(user, attemptIndex) {
+    var base = contactKey(user) + "|" + attemptIndex + "|" + CODE_SALT;
+    var h = 2166136261, i;
+    for (i = 0; i < base.length; i++) { h ^= base.charCodeAt(i); h = (h * 16777619) >>> 0; }
+    var h2 = 5381;
+    for (i = base.length - 1; i >= 0; i--) { h2 = ((h2 * 33) ^ base.charCodeAt(i)) >>> 0; }
+    var raw = (h.toString(36) + h2.toString(36)).toUpperCase().replace(/[^A-Z0-9]/g, "");
+    return "RA-" + raw.slice(0, 4) + "-" + raw.slice(4, 8);
+  }
+  var SPENT_KEY = "disha.elite.spent";
+  function spentAll() {
+    try { return JSON.parse(localStorage.getItem(SPENT_KEY) || "{}"); } catch (e) { return {}; }
+  }
+  function markSpent(id, code) {
+    var all = spentAll();
+    all[id] = all[id] || [];
+    if (all[id].indexOf(code) < 0) all[id].push(code);
+    try { localStorage.setItem(SPENT_KEY, JSON.stringify(all)); } catch (e) {}
+  }
+  function isSpent(id, code) {
+    return (spentAll()[id] || []).indexOf(code) > -1;
+  }
+
+  function redeem(user, entered) {
+    var id = (user && user.id) || "anon";
+    var want = String(entered || "").toUpperCase().replace(/[\s\u2013\u2014]/g, "");
+    if (!contactKey(user)) return { ok: false, reason: "no-contact" };
+    /* One code, one sitting. A spent code is refused even though it
+       still hashes correctly, so it cannot be passed around a class
+       or re-used by the same student for a third attempt. */
+    if (isSpent(id, want)) return { ok: false, reason: "already-used" };
+    var used = attRow(id).used, i;
+    /* accept the code for the sitting they are about to take, and
+       tolerate an off-by-one if their local count lags the office's */
+    for (i = Math.max(1, used); i <= used + 1; i++) {
+      if (codeFor(user, i) === want) {
+        markSpent(id, want);
+        attempts.grant(id, 1, "re-attempt code");
+        return { ok: true };
+      }
+    }
+    return { ok: false, reason: "no-match" };
+  }
+
   /* ---- the gate ---------------------------------------------------
      Every route into the quiz passes through DISHA_CONSENT_UI.gate.
      Wrapping it is the one place that catches "Start Assessment",
      "Retake Assessment" and the resume path together.              */
   function blockedMessage(lang, v) {
     return L(lang,
-      "You have already completed your assessment. A re-attempt has to be released by your school or by DISHA — ask them to open a re-attempt for you, then try again.",
-      "आप अपना मूल्यांकन पूरा कर चुके हैं। दोबारा प्रयास आपके विद्यालय या DISHA द्वारा खोला जाता है — उनसे अनुरोध करें, फिर दोबारा प्रयास करें।");
+      "You have already completed your assessment.\n\nA re-attempt is released by your school or by DISHA. If they have given you a re-attempt code, enter it below. Leave it blank to go back.",
+      "आप अपना मूल्यांकन पूरा कर चुके हैं।\n\nदोबारा प्रयास आपके विद्यालय या DISHA द्वारा खोला जाता है। यदि आपको दोबारा-प्रयास कोड मिला है, नीचे दर्ज करें। वापस जाने के लिए ख़ाली छोड़ें।");
   }
 
   function installGate() {
@@ -6473,7 +6533,20 @@ window.DISHA_ELITE = (function () {
         if (user && user.role === "student") {
           mergeFromAccount(user);
           var v = attempts.canStart(user);
-          if (!v.ok) { try { alert(blockedMessage(lang, v)); } catch (e) {} return Promise.resolve(false); }
+          if (!v.ok) {
+            var entered = null;
+            try { entered = prompt(blockedMessage(lang, v)); } catch (e) {}
+            var r = entered ? redeem(user, entered) : { ok: false, reason: "cancelled" };
+            if (!r.ok) {
+              if (entered) {
+                try {
+                  alert(L(lang, "That code does not match this account. Check it with your school and try again.",
+                                "यह कोड इस खाते से मेल नहीं खाता। विद्यालय से जाँचकर दोबारा प्रयास करें।"));
+                } catch (e2) {}
+              }
+              return Promise.resolve(false);
+            }
+          }
         }
       } catch (e) {}
       return orig.call(CU, user, uiLang).then(function (ok) {
@@ -6510,6 +6583,39 @@ window.DISHA_ELITE = (function () {
            "display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow:auto";
   }
 
+  /* Accounts live in two places: this browser's own store, and the
+     cloud "profiles" table when Supabase is on. A student who signed
+     up on their own phone exists only in the second one, so the
+     console has to read both and merge — searching the local store
+     alone is why a real student can come back "not found".        */
+  var cloudOn = false;
+  function roster() {
+    var local = (window.DISHA_DB && window.DISHA_DB.accounts)
+      ? window.DISHA_DB.accounts.list().catch(function () { return []; })
+      : Promise.resolve([]);
+    var remote = Promise.resolve([]);
+    try {
+      if (window.DISHA_CLOUD && window.DISHA_CLOUD.enabled && window.DISHA_CLOUD.enabled()) {
+        cloudOn = true;
+        remote = window.DISHA_CLOUD.listProfiles().catch(function () { return []; });
+      }
+    } catch (e) {}
+    return Promise.all([local, remote]).then(function (r) {
+      var seen = {}, out = [];
+      function key(a) {
+        return String(a.mobile || a.email || a.id || "").toLowerCase().replace(/[^a-z0-9@.]/g, "");
+      }
+      r[1].concat(r[0]).forEach(function (a) {
+        if (!a) return;
+        var k = key(a);
+        if (!k) return;
+        if (seen[k]) { Object.keys(a).forEach(function (f) { if (seen[k][f] == null) seen[k][f] = a[f]; }); return; }
+        seen[k] = a; out.push(a);
+      });
+      return out;
+    });
+  }
+
   function openAdmin(user) {
     user = user || window.__dishaUser;
     if (!user || user.role !== "admin") {
@@ -6544,12 +6650,7 @@ window.DISHA_ELITE = (function () {
     if (!adminOverlay) return;
     var body = adminOverlay.querySelector("#dra-body");
     body.innerHTML = '<div style="color:' + P.grey + ';font-size:14px">Loading accounts…</div>';
-    var db = window.DISHA_DB;
-    if (!db || !db.accounts) {
-      body.innerHTML = '<div style="color:' + P.grey + '">No local account store is available in this browser.</div>';
-      return;
-    }
-    db.accounts.list().then(function (list) {
+    roster().then(function (list) {
       var q = adminQuery.trim().toLowerCase();
       var rows = (list || []).filter(function (a) { return a && a.role !== "admin"; });
       rows.forEach(mergeFromAccount);
@@ -6587,16 +6688,34 @@ window.DISHA_ELITE = (function () {
           '</td>' +
           '<td style="padding:8px;white-space:nowrap">' +
             '<button data-grant="' + esc(a.id) + '" style="background:' + P.cardinal + ';color:#fff;border:none;border-radius:4px;padding:6px 10px;font-weight:700;font-size:12.5px;cursor:pointer">+1 re-attempt</button> ' +
+            '<button data-code="' + esc(a.id) + '" style="background:' + P.gold + ';color:#2E2D29;border:none;border-radius:4px;padding:6px 10px;font-weight:700;font-size:12.5px;cursor:pointer">Get code</button> ' +
             '<button data-revoke="' + esc(a.id) + '" style="background:#fff;color:' + P.ink + ';border:1px solid ' + P.hairline + ';border-radius:4px;padding:6px 10px;font-size:12.5px;cursor:pointer">Revoke</button> ' +
             '<button data-reset="' + esc(a.id) + '" style="background:#fff;color:' + P.grey + ';border:1px solid ' + P.hairline + ';border-radius:4px;padding:6px 10px;font-size:12.5px;cursor:pointer">Reset</button>' +
           '</td></tr>';
       }).join("");
       body.innerHTML = '<table style="width:100%;border-collapse:collapse">' + head + trs + '</table>' +
-        '<div style="font-size:12px;color:' + P.grey + ';margin-top:12px">Reset clears both the used count and any grants — use it only when a sitting was abandoned or recorded in error.</div>';
+        '<div style="font-size:12px;color:' + P.grey + ';margin-top:12px">' +
+        '<b>+1 re-attempt</b> opens the sitting on this device. If the student signed up on their own phone, use <b>Get code</b> and read the code out to them — they enter it when they tap Retake. ' +
+        'Reset clears both the used count and any grants; use it only when a sitting was abandoned or recorded in error.' +
+        '<div style="margin-top:6px">Roster source: ' + (cloudOn ? 'cloud + this device' : 'this device only — cloud is off, so students who signed up elsewhere will not appear') + '.</div></div>';
 
       var who = (window.__dishaUser && window.__dishaUser.name) || "administrator";
       body.querySelectorAll("[data-grant]").forEach(function (b) {
         b.onclick = function () { attempts.grant(b.getAttribute("data-grant"), 1, who); renderAdmin(); };
+      });
+      body.querySelectorAll("[data-code]").forEach(function (b) {
+        b.onclick = function () {
+          var id = b.getAttribute("data-code");
+          var who2 = rows.filter(function (a) { return a.id === id; })[0];
+          if (!who2 || !contactKey(who2)) {
+            alert("This account has no mobile or email on record, so a code cannot be issued. Use +1 re-attempt on the student's own device instead.");
+            return;
+          }
+          var c = codeFor(who2, attRow(id).used + 1);
+          try { navigator.clipboard && navigator.clipboard.writeText(c); } catch (e) {}
+          prompt("Re-attempt code for " + (who2.name || "this student") +
+                 "\n\nRead this out to them. They enter it when they tap Retake Assessment.", c);
+        };
       });
       body.querySelectorAll("[data-revoke]").forEach(function (b) {
         b.onclick = function () { attempts.revoke(b.getAttribute("data-revoke")); renderAdmin(); };
@@ -7289,10 +7408,12 @@ window.DISHA_ELITE = (function () {
     aptitudeBank: APT, streamBank: STREAM_ITEMS,
     select: select, served: served, report: eliteStreamBlock,
     attempts: attempts, admin: openAdmin, newAge: NEWAGE,
+    codes: { for: codeFor, redeem: redeem, contact: contactKey },
     plan: function () { return lastPlan; }
   };
 })();
 
+</script>
 </script>
 <script>(()=>{var yC=Object.create;var j1=Object.defineProperty;var vC=Object.getOwnPropertyDescriptor;var wC=Object.getOwnPropertyNames;var AC=Object.getPrototypeOf,SC=Object.prototype.hasOwnProperty;var M=(e,t)=>()=>{try{return t||e((t={exports:{}}).exports,t),t.exports}catch(n){throw t=0,n}},bC=(e,t)=>{for(var n in t)j1(e,n,{get:t[n],enumerable:!0})},xC=(e,t,n,r)=>{if(t&&typeof t=="object"||typeof t=="function")for(let i of wC(t))!SC.call(e,i)&&i!==n&&j1(e,i,{get:()=>t[i],enumerable:!(r=vC(t,i))||r.enumerable});return e};var Z=(e,t,n)=>(n=e!=null?yC(AC(e)):{},xC(t||!e||!e.__esModule?j1(n,"default",{value:e,enumerable:!0}):n,e));var Vw=M(Ie=>{"use strict";var ll=Symbol.for("react.element"),IC=Symbol.for("react.portal"),TC=Symbol.for("react.fragment"),NC=Symbol.for("react.strict_mode"),PC=Symbol.for("react.profiler"),UC=Symbol.for("react.provider"),kC=Symbol.for("react.context"),EC=Symbol.for("react.forward_ref"),CC=Symbol.for("react.suspense"),OC=Symbol.for("react.memo"),DC=Symbol.for("react.lazy"),kw=Symbol.iterator;function MC(e){return e===null||typeof e!="object"?null:(e=kw&&e[kw]||e["@@iterator"],typeof e=="function"?e:null)}var Ow={isMounted:function(){return!1},enqueueForceUpdate:function(){},enqueueReplaceState:function(){},enqueueSetState:function(){}},Dw=Object.assign,Mw={};function Qa(e,t,n){this.props=e,this.context=t,this.refs=Mw,this.updater=n||Ow}Qa.prototype.isReactComponent={};Qa.prototype.setState=function(e,t){if(typeof e!="object"&&typeof e!="function"&&e!=null)throw Error("setState(...): takes an object of state variables to update or a function which returns an object of state variables.");this.updater.enqueueSetState(this,e,t,"setState")};Qa.prototype.forceUpdate=function(e){this.updater.enqueueForceUpdate(this,e,"forceUpdate")};function jw(){}jw.prototype=Qa.prototype;function R1(e,t,n){this.props=e,this.context=t,this.refs=Mw,this.updater=n||Ow}var B1=R1.prototype=new jw;B1.constructor=R1;Dw(B1,Qa.prototype);B1.isPureReactComponent=!0;var Ew=Array.isArray,Hw=Object.prototype.hasOwnProperty,L1={current:null},Rw={key:!0,ref:!0,__self:!0,__source:!0};function Bw(e,t,n){var r,i={},a=null,o=null;if(t!=null)for(r in t.ref!==void 0&&(o=t.ref),t.key!==void 0&&(a=""+t.key),t)Hw.call(t,r)&&!Rw.hasOwnProperty(r)&&(i[r]=t[r]);var s=arguments.length-2;if(s===1)i.children=n;else if(1<s){for(var u=Array(s),c=0;c<s;c++)u[c]=arguments[c+2];i.children=u}if(e&&e.defaultProps)for(r in s=e.defaultProps,s)i[r]===void 0&&(i[r]=s[r]);return{$$typeof:ll,type:e,key:a,ref:o,props:i,_owner:L1.current}}function jC(e,t){return{$$typeof:ll,type:e.type,key:t,ref:e.ref,props:e.props,_owner:e._owner}}function V1(e){return typeof e=="object"&&e!==null&&e.$$typeof===ll}function HC(e){var t={"=":"=0",":":"=2"};return"$"+e.replace(/[=:]/g,function(n){return t[n]})}var Cw=/\/+/g;function H1(e,t){return typeof e=="object"&&e!==null&&e.key!=null?HC(""+e.key):t.toString(36)}function nf(e,t,n,r,i){var a=typeof e;(a==="undefined"||a==="boolean")&&(e=null);var o=!1;if(e===null)o=!0;else switch(a){case"string":case"number":o=!0;break;case"object":switch(e.$$typeof){case ll:case IC:o=!0}}if(o)return o=e,i=i(o),e=r===""?"."+H1(o,0):r,Ew(i)?(n="",e!=null&&(n=e.replace(Cw,"$&/")+"/"),nf(i,t,n,"",function(c){return c})):i!=null&&(V1(i)&&(i=jC(i,n+(!i.key||o&&o.key===i.key?"":(""+i.key).replace(Cw,"$&/")+"/")+e)),t.push(i)),1;if(o=0,r=r===""?".":r+":",Ew(e))for(var s=0;s<e.length;s++){a=e[s];var u=r+H1(a,s);o+=nf(a,t,n,u,i)}else if(u=MC(e),typeof u=="function")for(e=u.call(e),s=0;!(a=e.next()).done;)a=a.value,u=r+H1(a,s++),o+=nf(a,t,n,u,i);else if(a==="object")throw t=String(e),Error("Objects are not valid as a React child (found: "+(t==="[object Object]"?"object with keys {"+Object.keys(e).join(", ")+"}":t)+"). If you meant to render a collection of children, use an array instead.");return o}function tf(e,t,n){if(e==null)return e;var r=[],i=0;return nf(e,r,"","",function(a){return t.call(n,a,i++)}),r}function RC(e){if(e._status===-1){var t=e._result;t=t(),t.then(function(n){(e._status===0||e._status===-1)&&(e._status=1,e._result=n)},function(n){(e._status===0||e._status===-1)&&(e._status=2,e._result=n)}),e._status===-1&&(e._status=0,e._result=t)}if(e._status===1)return e._result.default;throw e._result}var Yt={current:null},rf={transition:null},BC={ReactCurrentDispatcher:Yt,ReactCurrentBatchConfig:rf,ReactCurrentOwner:L1};function Lw(){throw Error("act(...) is not supported in production builds of React.")}Ie.Children={map:tf,forEach:function(e,t,n){tf(e,function(){t.apply(this,arguments)},n)},count:function(e){var t=0;return tf(e,function(){t++}),t},toArray:function(e){return tf(e,function(t){return t})||[]},only:function(e){if(!V1(e))throw Error("React.Children.only expected to receive a single React element child.");return e}};Ie.Component=Qa;Ie.Fragment=TC;Ie.Profiler=PC;Ie.PureComponent=R1;Ie.StrictMode=NC;Ie.Suspense=CC;Ie.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED=BC;Ie.act=Lw;Ie.cloneElement=function(e,t,n){if(e==null)throw Error("React.cloneElement(...): The argument must be a React element, but you passed "+e+".");var r=Dw({},e.props),i=e.key,a=e.ref,o=e._owner;if(t!=null){if(t.ref!==void 0&&(a=t.ref,o=L1.current),t.key!==void 0&&(i=""+t.key),e.type&&e.type.defaultProps)var s=e.type.defaultProps;for(u in t)Hw.call(t,u)&&!Rw.hasOwnProperty(u)&&(r[u]=t[u]===void 0&&s!==void 0?s[u]:t[u])}var u=arguments.length-2;if(u===1)r.children=n;else if(1<u){s=Array(u);for(var c=0;c<u;c++)s[c]=arguments[c+2];r.children=s}return{$$typeof:ll,type:e.type,key:i,ref:a,props:r,_owner:o}};Ie.createContext=function(e){return e={$$typeof:kC,_currentValue:e,_currentValue2:e,_threadCount:0,Provider:null,Consumer:null,_defaultValue:null,_globalName:null},e.Provider={$$typeof:UC,_context:e},e.Consumer=e};Ie.createElement=Bw;Ie.createFactory=function(e){var t=Bw.bind(null,e);return t.type=e,t};Ie.createRef=function(){return{current:null}};Ie.forwardRef=function(e){return{$$typeof:EC,render:e}};Ie.isValidElement=V1;Ie.lazy=function(e){return{$$typeof:DC,_payload:{_status:-1,_result:e},_init:RC}};Ie.memo=function(e,t){return{$$typeof:OC,type:e,compare:t===void 0?null:t}};Ie.startTransition=function(e){var t=rf.transition;rf.transition={};try{e()}finally{rf.transition=t}};Ie.unstable_act=Lw;Ie.useCallback=function(e,t){return Yt.current.useCallback(e,t)};Ie.useContext=function(e){return Yt.current.useContext(e)};Ie.useDebugValue=function(){};Ie.useDeferredValue=function(e){return Yt.current.useDeferredValue(e)};Ie.useEffect=function(e,t){return Yt.current.useEffect(e,t)};Ie.useId=function(){return Yt.current.useId()};Ie.useImperativeHandle=function(e,t,n){return Yt.current.useImperativeHandle(e,t,n)};Ie.useInsertionEffect=function(e,t){return Yt.current.useInsertionEffect(e,t)};Ie.useLayoutEffect=function(e,t){return Yt.current.useLayoutEffect(e,t)};Ie.useMemo=function(e,t){return Yt.current.useMemo(e,t)};Ie.useReducer=function(e,t,n){return Yt.current.useReducer(e,t,n)};Ie.useRef=function(e){return Yt.current.useRef(e)};Ie.useState=function(e){return Yt.current.useState(e)};Ie.useSyncExternalStore=function(e,t,n){return Yt.current.useSyncExternalStore(e,t,n)};Ie.useTransition=function(){return Yt.current.useTransition()};Ie.version="18.3.1"});var be=M((bie,Gw)=>{"use strict";Gw.exports=Vw()});var Zw=M(Ke=>{"use strict";function z1(e,t){var n=e.length;e.push(t);e:for(;0<n;){var r=n-1>>>1,i=e[r];if(0<af(i,t))e[r]=t,e[n]=i,n=r;else break e}}function rr(e){return e.length===0?null:e[0]}function sf(e){if(e.length===0)return null;var t=e[0],n=e.pop();if(n!==t){e[0]=n;e:for(var r=0,i=e.length,a=i>>>1;r<a;){var o=2*(r+1)-1,s=e[o],u=o+1,c=e[u];if(0>af(s,n))u<i&&0>af(c,s)?(e[r]=c,e[u]=n,r=u):(e[r]=s,e[o]=n,r=o);else if(u<i&&0>af(c,n))e[r]=c,e[u]=n,r=u;else break e}}return t}function af(e,t){var n=e.sortIndex-t.sortIndex;return n!==0?n:e.id-t.id}typeof performance=="object"&&typeof performance.now=="function"?(Kw=performance,Ke.unstable_now=function(){return Kw.now()}):(G1=Date,Ww=G1.now(),Ke.unstable_now=function(){return G1.now()-Ww});var Kw,G1,Ww,xr=[],mi=[],LC=1,Mn=null,Lt=3,lf=!1,$i=!1,cl=!1,Jw=typeof setTimeout=="function"?setTimeout:null,qw=typeof clearTimeout=="function"?clearTimeout:null,zw=typeof setImmediate<"u"?setImmediate:null;typeof navigator<"u"&&navigator.scheduling!==void 0&&navigator.scheduling.isInputPending!==void 0&&navigator.scheduling.isInputPending.bind(navigator.scheduling);function F1(e){for(var t=rr(mi);t!==null;){if(t.callback===null)sf(mi);else if(t.startTime<=e)sf(mi),t.sortIndex=t.expirationTime,z1(xr,t);else break;t=rr(mi)}}function J1(e){if(cl=!1,F1(e),!$i)if(rr(xr)!==null)$i=!0,Y1(q1);else{var t=rr(mi);t!==null&&X1(J1,t.startTime-e)}}function q1(e,t){$i=!1,cl&&(cl=!1,qw(fl),fl=-1),lf=!0;var n=Lt;try{for(F1(t),Mn=rr(xr);Mn!==null&&(!(Mn.expirationTime>t)||e&&!Qw());){var r=Mn.callback;if(typeof r=="function"){Mn.callback=null,Lt=Mn.priorityLevel;var i=r(Mn.expirationTime<=t);t=Ke.unstable_now(),typeof i=="function"?Mn.callback=i:Mn===rr(xr)&&sf(xr),F1(t)}else sf(xr);Mn=rr(xr)}if(Mn!==null)var a=!0;else{var o=rr(mi);o!==null&&X1(J1,o.startTime-t),a=!1}return a}finally{Mn=null,Lt=n,lf=!1}}var uf=!1,of=null,fl=-1,Yw=5,Xw=-1;function Qw(){return!(Ke.unstable_now()-Xw<Yw)}function K1(){if(of!==null){var e=Ke.unstable_now();Xw=e;var t=!0;try{t=of(!0,e)}finally{t?ul():(uf=!1,of=null)}}else uf=!1}var ul;typeof zw=="function"?ul=function(){zw(K1)}:typeof MessageChannel<"u"?(W1=new MessageChannel,Fw=W1.port2,W1.port1.onmessage=K1,ul=function(){Fw.postMessage(null)}):ul=function(){Jw(K1,0)};var W1,Fw;function Y1(e){of=e,uf||(uf=!0,ul())}function X1(e,t){fl=Jw(function(){e(Ke.unstable_now())},t)}Ke.unstable_IdlePriority=5;Ke.unstable_ImmediatePriority=1;Ke.unstable_LowPriority=4;Ke.unstable_NormalPriority=3;Ke.unstable_Profiling=null;Ke.unstable_UserBlockingPriority=2;Ke.unstable_cancelCallback=function(e){e.callback=null};Ke.unstable_continueExecution=function(){$i||lf||($i=!0,Y1(q1))};Ke.unstable_forceFrameRate=function(e){0>e||125<e?console.error("forceFrameRate takes a positive int between 0 and 125, forcing frame rates higher than 125 fps is not supported"):Yw=0<e?Math.floor(1e3/e):5};Ke.unstable_getCurrentPriorityLevel=function(){return Lt};Ke.unstable_getFirstCallbackNode=function(){return rr(xr)};Ke.unstable_next=function(e){switch(Lt){case 1:case 2:case 3:var t=3;break;default:t=Lt}var n=Lt;Lt=t;try{return e()}finally{Lt=n}};Ke.unstable_pauseExecution=function(){};Ke.unstable_requestPaint=function(){};Ke.unstable_runWithPriority=function(e,t){switch(e){case 1:case 2:case 3:case 4:case 5:break;default:e=3}var n=Lt;Lt=e;try{return t()}finally{Lt=n}};Ke.unstable_scheduleCallback=function(e,t,n){var r=Ke.unstable_now();switch(typeof n=="object"&&n!==null?(n=n.delay,n=typeof n=="number"&&0<n?r+n:r):n=r,e){case 1:var i=-1;break;case 2:i=250;break;case 5:i=1073741823;break;case 4:i=1e4;break;default:i=5e3}return i=n+i,e={id:LC++,callback:t,priorityLevel:e,startTime:n,expirationTime:i,sortIndex:-1},n>r?(e.sortIndex=n,z1(mi,e),rr(xr)===null&&e===rr(mi)&&(cl?(qw(fl),fl=-1):cl=!0,X1(J1,n-r))):(e.sortIndex=i,z1(xr,e),$i||lf||($i=!0,Y1(q1))),e};Ke.unstable_shouldYield=Qw;Ke.unstable_wrapCallback=function(e){var t=Lt;return function(){var n=Lt;Lt=t;try{return e.apply(this,arguments)}finally{Lt=n}}}});var $w=M((Iie,_w)=>{"use strict";_w.exports=Zw()});var r4=M(xn=>{"use strict";var VC=be(),Sn=$w();function ie(e){for(var t="https://reactjs.org/docs/error-decoder.html?invariant="+e,n=1;n<arguments.length;n++)t+="&args[]="+encodeURIComponent(arguments[n]);return"Minified React error #"+e+"; visit "+t+" for the full message or use the non-minified dev environment for full errors and additional helpful warnings."}var oS=new Set,Dl={};function da(e,t){vo(e,t),vo(e+"Capture",t)}function vo(e,t){for(Dl[e]=t,e=0;e<t.length;e++)oS.add(t[e])}var _r=!(typeof window>"u"||typeof window.document>"u"||typeof window.document.createElement>"u"),v0=Object.prototype.hasOwnProperty,GC=/^[:A-Z_a-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD][:A-Z_a-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD\-.0-9\u00B7\u0300-\u036F\u203F-\u2040]*$/,eA={},tA={};function KC(e){return v0.call(tA,e)?!0:v0.call(eA,e)?!1:GC.test(e)?tA[e]=!0:(eA[e]=!0,!1)}function WC(e,t,n,r){if(n!==null&&n.type===0)return!1;switch(typeof t){case"function":case"symbol":return!0;case"boolean":return r?!1:n!==null?!n.acceptsBooleans:(e=e.toLowerCase().slice(0,5),e!=="data-"&&e!=="aria-");default:return!1}}function zC(e,t,n,r){if(t===null||typeof t>"u"||WC(e,t,n,r))return!0;if(r)return!1;if(n!==null)switch(n.type){case 3:return!t;case 4:return t===!1;case 5:return isNaN(t);case 6:return isNaN(t)||1>t}return!1}function Zt(e,t,n,r,i,a,o){this.acceptsBooleans=t===2||t===3||t===4,this.attributeName=r,this.attributeNamespace=i,this.mustUseProperty=n,this.propertyName=e,this.type=t,this.sanitizeURL=a,this.removeEmptyString=o}var jt={};"children dangerouslySetInnerHTML defaultValue defaultChecked innerHTML suppressContentEditableWarning suppressHydrationWarning style".split(" ").forEach(function(e){jt[e]=new Zt(e,0,!1,e,null,!1,!1)});[["acceptCharset","accept-charset"],["className","class"],["htmlFor","for"],["httpEquiv","http-equiv"]].forEach(function(e){var t=e[0];jt[t]=new Zt(t,1,!1,e[1],null,!1,!1)});["contentEditable","draggable","spellCheck","value"].forEach(function(e){jt[e]=new Zt(e,2,!1,e.toLowerCase(),null,!1,!1)});["autoReverse","externalResourcesRequired","focusable","preserveAlpha"].forEach(function(e){jt[e]=new Zt(e,2,!1,e,null,!1,!1)});"allowFullScreen async autoFocus autoPlay controls default defer disabled disablePictureInPicture disableRemotePlayback formNoValidate hidden loop noModule noValidate open playsInline readOnly required reversed scoped seamless itemScope".split(" ").forEach(function(e){jt[e]=new Zt(e,3,!1,e.toLowerCase(),null,!1,!1)});["checked","multiple","muted","selected"].forEach(function(e){jt[e]=new Zt(e,3,!0,e,null,!1,!1)});["capture","download"].forEach(function(e){jt[e]=new Zt(e,4,!1,e,null,!1,!1)});["cols","rows","size","span"].forEach(function(e){jt[e]=new Zt(e,6,!1,e,null,!1,!1)});["rowSpan","start"].forEach(function(e){jt[e]=new Zt(e,5,!1,e.toLowerCase(),null,!1,!1)});var cm=/[\-:]([a-z])/g;function fm(e){return e[1].toUpperCase()}"accent-height alignment-baseline arabic-form baseline-shift cap-height clip-path clip-rule color-interpolation color-interpolation-filters color-profile color-rendering dominant-baseline enable-background fill-opacity fill-rule flood-color flood-opacity font-family font-size font-size-adjust font-stretch font-style font-variant font-weight glyph-name glyph-orientation-horizontal glyph-orientation-vertical horiz-adv-x horiz-origin-x image-rendering letter-spacing lighting-color marker-end marker-mid marker-start overline-position overline-thickness paint-order panose-1 pointer-events rendering-intent shape-rendering stop-color stop-opacity strikethrough-position strikethrough-thickness stroke-dasharray stroke-dashoffset stroke-linecap stroke-linejoin stroke-miterlimit stroke-opacity stroke-width text-anchor text-decoration text-rendering underline-position underline-thickness unicode-bidi unicode-range units-per-em v-alphabetic v-hanging v-ideographic v-mathematical vector-effect vert-adv-y vert-origin-x vert-origin-y word-spacing writing-mode xmlns:xlink x-height".split(" ").forEach(function(e){var t=e.replace(cm,fm);jt[t]=new Zt(t,1,!1,e,null,!1,!1)});"xlink:actuate xlink:arcrole xlink:role xlink:show xlink:title xlink:type".split(" ").forEach(function(e){var t=e.replace(cm,fm);jt[t]=new Zt(t,1,!1,e,"http://www.w3.org/1999/xlink",!1,!1)});["xml:base","xml:lang","xml:space"].forEach(function(e){var t=e.replace(cm,fm);jt[t]=new Zt(t,1,!1,e,"http://www.w3.org/XML/1998/namespace",!1,!1)});["tabIndex","crossOrigin"].forEach(function(e){jt[e]=new Zt(e,1,!1,e.toLowerCase(),null,!1,!1)});jt.xlinkHref=new Zt("xlinkHref",1,!1,"xlink:href","http://www.w3.org/1999/xlink",!0,!1);["src","href","action","formAction"].forEach(function(e){jt[e]=new Zt(e,1,!1,e.toLowerCase(),null,!0,!0)});function dm(e,t,n,r){var i=jt.hasOwnProperty(t)?jt[t]:null;(i!==null?i.type!==0:r||!(2<t.length)||t[0]!=="o"&&t[0]!=="O"||t[1]!=="n"&&t[1]!=="N")&&(zC(t,n,i,r)&&(n=null),r||i===null?KC(t)&&(n===null?e.removeAttribute(t):e.setAttribute(t,""+n)):i.mustUseProperty?e[i.propertyName]=n===null?i.type===3?!1:"":n:(t=i.attributeName,r=i.attributeNamespace,n===null?e.removeAttribute(t):(i=i.type,n=i===3||i===4&&n===!0?"":""+n,r?e.setAttributeNS(r,t,n):e.setAttribute(t,n))))}var ni=VC.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED,cf=Symbol.for("react.element"),$a=Symbol.for("react.portal"),eo=Symbol.for("react.fragment"),pm=Symbol.for("react.strict_mode"),w0=Symbol.for("react.profiler"),sS=Symbol.for("react.provider"),lS=Symbol.for("react.context"),hm=Symbol.for("react.forward_ref"),A0=Symbol.for("react.suspense"),S0=Symbol.for("react.suspense_list"),mm=Symbol.for("react.memo"),yi=Symbol.for("react.lazy"),uS=Symbol.for("react.offscreen"),nA=Symbol.iterator;function dl(e){return e===null||typeof e!="object"?null:(e=nA&&e[nA]||e["@@iterator"],typeof e=="function"?e:null)}var at=Object.assign,Q1;function Al(e){if(Q1===void 0)try{throw Error()}catch(n){var t=n.stack.trim().match(/\n( *(at )?)/);Q1=t&&t[1]||""}return`
 `+Q1+e}var Z1=!1;function _1(e,t){if(!e||Z1)return"";Z1=!0;var n=Error.prepareStackTrace;Error.prepareStackTrace=void 0;try{if(t)if(t=function(){throw Error()},Object.defineProperty(t.prototype,"props",{set:function(){throw Error()}}),typeof Reflect=="object"&&Reflect.construct){try{Reflect.construct(t,[])}catch(c){var r=c}Reflect.construct(e,[],t)}else{try{t.call()}catch(c){r=c}e.call(t.prototype)}else{try{throw Error()}catch(c){r=c}e()}}catch(c){if(c&&r&&typeof c.stack=="string"){for(var i=c.stack.split(`

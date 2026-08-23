@@ -988,14 +988,74 @@ window.DISHA_ELITE = (function () {
     merge: mergeFromAccount
   };
 
+  /* ---- re-attempt codes -------------------------------------------
+     A grant issued in the administrator's browser cannot reach the
+     student's phone: the cloud "profiles" table has no attempt
+     columns, and saveProfile can only write the signed-in user's own
+     row. Until that schema is extended, the grant travels as a short
+     code the administrator reads out, the same way promo codes
+     already work here. The code is derived from the student's own
+     mobile or email, so their device can verify it offline and no
+     other student can use it.                                      */
+
+  var CODE_SALT = "DISHA-RA-2026";
+
+  function contactKey(user) {
+    var c = String((user && (user.mobile || user.email)) || "").toLowerCase().trim();
+    return c.replace(/[^a-z0-9@.]/g, "");
+  }
+  function codeFor(user, attemptIndex) {
+    var base = contactKey(user) + "|" + attemptIndex + "|" + CODE_SALT;
+    var h = 2166136261, i;
+    for (i = 0; i < base.length; i++) { h ^= base.charCodeAt(i); h = (h * 16777619) >>> 0; }
+    var h2 = 5381;
+    for (i = base.length - 1; i >= 0; i--) { h2 = ((h2 * 33) ^ base.charCodeAt(i)) >>> 0; }
+    var raw = (h.toString(36) + h2.toString(36)).toUpperCase().replace(/[^A-Z0-9]/g, "");
+    return "RA-" + raw.slice(0, 4) + "-" + raw.slice(4, 8);
+  }
+  var SPENT_KEY = "disha.elite.spent";
+  function spentAll() {
+    try { return JSON.parse(localStorage.getItem(SPENT_KEY) || "{}"); } catch (e) { return {}; }
+  }
+  function markSpent(id, code) {
+    var all = spentAll();
+    all[id] = all[id] || [];
+    if (all[id].indexOf(code) < 0) all[id].push(code);
+    try { localStorage.setItem(SPENT_KEY, JSON.stringify(all)); } catch (e) {}
+  }
+  function isSpent(id, code) {
+    return (spentAll()[id] || []).indexOf(code) > -1;
+  }
+
+  function redeem(user, entered) {
+    var id = (user && user.id) || "anon";
+    var want = String(entered || "").toUpperCase().replace(/[\s\u2013\u2014]/g, "");
+    if (!contactKey(user)) return { ok: false, reason: "no-contact" };
+    /* One code, one sitting. A spent code is refused even though it
+       still hashes correctly, so it cannot be passed around a class
+       or re-used by the same student for a third attempt. */
+    if (isSpent(id, want)) return { ok: false, reason: "already-used" };
+    var used = attRow(id).used, i;
+    /* accept the code for the sitting they are about to take, and
+       tolerate an off-by-one if their local count lags the office's */
+    for (i = Math.max(1, used); i <= used + 1; i++) {
+      if (codeFor(user, i) === want) {
+        markSpent(id, want);
+        attempts.grant(id, 1, "re-attempt code");
+        return { ok: true };
+      }
+    }
+    return { ok: false, reason: "no-match" };
+  }
+
   /* ---- the gate ---------------------------------------------------
      Every route into the quiz passes through DISHA_CONSENT_UI.gate.
      Wrapping it is the one place that catches "Start Assessment",
      "Retake Assessment" and the resume path together.              */
   function blockedMessage(lang, v) {
     return L(lang,
-      "You have already completed your assessment. A re-attempt has to be released by your school or by DISHA — ask them to open a re-attempt for you, then try again.",
-      "आप अपना मूल्यांकन पूरा कर चुके हैं। दोबारा प्रयास आपके विद्यालय या DISHA द्वारा खोला जाता है — उनसे अनुरोध करें, फिर दोबारा प्रयास करें।");
+      "You have already completed your assessment.\n\nA re-attempt is released by your school or by DISHA. If they have given you a re-attempt code, enter it below. Leave it blank to go back.",
+      "आप अपना मूल्यांकन पूरा कर चुके हैं।\n\nदोबारा प्रयास आपके विद्यालय या DISHA द्वारा खोला जाता है। यदि आपको दोबारा-प्रयास कोड मिला है, नीचे दर्ज करें। वापस जाने के लिए ख़ाली छोड़ें।");
   }
 
   function installGate() {
@@ -1008,7 +1068,20 @@ window.DISHA_ELITE = (function () {
         if (user && user.role === "student") {
           mergeFromAccount(user);
           var v = attempts.canStart(user);
-          if (!v.ok) { try { alert(blockedMessage(lang, v)); } catch (e) {} return Promise.resolve(false); }
+          if (!v.ok) {
+            var entered = null;
+            try { entered = prompt(blockedMessage(lang, v)); } catch (e) {}
+            var r = entered ? redeem(user, entered) : { ok: false, reason: "cancelled" };
+            if (!r.ok) {
+              if (entered) {
+                try {
+                  alert(L(lang, "That code does not match this account. Check it with your school and try again.",
+                                "यह कोड इस खाते से मेल नहीं खाता। विद्यालय से जाँचकर दोबारा प्रयास करें।"));
+                } catch (e2) {}
+              }
+              return Promise.resolve(false);
+            }
+          }
         }
       } catch (e) {}
       return orig.call(CU, user, uiLang).then(function (ok) {
@@ -1045,6 +1118,39 @@ window.DISHA_ELITE = (function () {
            "display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow:auto";
   }
 
+  /* Accounts live in two places: this browser's own store, and the
+     cloud "profiles" table when Supabase is on. A student who signed
+     up on their own phone exists only in the second one, so the
+     console has to read both and merge — searching the local store
+     alone is why a real student can come back "not found".        */
+  var cloudOn = false;
+  function roster() {
+    var local = (window.DISHA_DB && window.DISHA_DB.accounts)
+      ? window.DISHA_DB.accounts.list().catch(function () { return []; })
+      : Promise.resolve([]);
+    var remote = Promise.resolve([]);
+    try {
+      if (window.DISHA_CLOUD && window.DISHA_CLOUD.enabled && window.DISHA_CLOUD.enabled()) {
+        cloudOn = true;
+        remote = window.DISHA_CLOUD.listProfiles().catch(function () { return []; });
+      }
+    } catch (e) {}
+    return Promise.all([local, remote]).then(function (r) {
+      var seen = {}, out = [];
+      function key(a) {
+        return String(a.mobile || a.email || a.id || "").toLowerCase().replace(/[^a-z0-9@.]/g, "");
+      }
+      r[1].concat(r[0]).forEach(function (a) {
+        if (!a) return;
+        var k = key(a);
+        if (!k) return;
+        if (seen[k]) { Object.keys(a).forEach(function (f) { if (seen[k][f] == null) seen[k][f] = a[f]; }); return; }
+        seen[k] = a; out.push(a);
+      });
+      return out;
+    });
+  }
+
   function openAdmin(user) {
     user = user || window.__dishaUser;
     if (!user || user.role !== "admin") {
@@ -1079,12 +1185,7 @@ window.DISHA_ELITE = (function () {
     if (!adminOverlay) return;
     var body = adminOverlay.querySelector("#dra-body");
     body.innerHTML = '<div style="color:' + P.grey + ';font-size:14px">Loading accounts…</div>';
-    var db = window.DISHA_DB;
-    if (!db || !db.accounts) {
-      body.innerHTML = '<div style="color:' + P.grey + '">No local account store is available in this browser.</div>';
-      return;
-    }
-    db.accounts.list().then(function (list) {
+    roster().then(function (list) {
       var q = adminQuery.trim().toLowerCase();
       var rows = (list || []).filter(function (a) { return a && a.role !== "admin"; });
       rows.forEach(mergeFromAccount);
@@ -1122,16 +1223,34 @@ window.DISHA_ELITE = (function () {
           '</td>' +
           '<td style="padding:8px;white-space:nowrap">' +
             '<button data-grant="' + esc(a.id) + '" style="background:' + P.cardinal + ';color:#fff;border:none;border-radius:4px;padding:6px 10px;font-weight:700;font-size:12.5px;cursor:pointer">+1 re-attempt</button> ' +
+            '<button data-code="' + esc(a.id) + '" style="background:' + P.gold + ';color:#2E2D29;border:none;border-radius:4px;padding:6px 10px;font-weight:700;font-size:12.5px;cursor:pointer">Get code</button> ' +
             '<button data-revoke="' + esc(a.id) + '" style="background:#fff;color:' + P.ink + ';border:1px solid ' + P.hairline + ';border-radius:4px;padding:6px 10px;font-size:12.5px;cursor:pointer">Revoke</button> ' +
             '<button data-reset="' + esc(a.id) + '" style="background:#fff;color:' + P.grey + ';border:1px solid ' + P.hairline + ';border-radius:4px;padding:6px 10px;font-size:12.5px;cursor:pointer">Reset</button>' +
           '</td></tr>';
       }).join("");
       body.innerHTML = '<table style="width:100%;border-collapse:collapse">' + head + trs + '</table>' +
-        '<div style="font-size:12px;color:' + P.grey + ';margin-top:12px">Reset clears both the used count and any grants — use it only when a sitting was abandoned or recorded in error.</div>';
+        '<div style="font-size:12px;color:' + P.grey + ';margin-top:12px">' +
+        '<b>+1 re-attempt</b> opens the sitting on this device. If the student signed up on their own phone, use <b>Get code</b> and read the code out to them — they enter it when they tap Retake. ' +
+        'Reset clears both the used count and any grants; use it only when a sitting was abandoned or recorded in error.' +
+        '<div style="margin-top:6px">Roster source: ' + (cloudOn ? 'cloud + this device' : 'this device only — cloud is off, so students who signed up elsewhere will not appear') + '.</div></div>';
 
       var who = (window.__dishaUser && window.__dishaUser.name) || "administrator";
       body.querySelectorAll("[data-grant]").forEach(function (b) {
         b.onclick = function () { attempts.grant(b.getAttribute("data-grant"), 1, who); renderAdmin(); };
+      });
+      body.querySelectorAll("[data-code]").forEach(function (b) {
+        b.onclick = function () {
+          var id = b.getAttribute("data-code");
+          var who2 = rows.filter(function (a) { return a.id === id; })[0];
+          if (!who2 || !contactKey(who2)) {
+            alert("This account has no mobile or email on record, so a code cannot be issued. Use +1 re-attempt on the student's own device instead.");
+            return;
+          }
+          var c = codeFor(who2, attRow(id).used + 1);
+          try { navigator.clipboard && navigator.clipboard.writeText(c); } catch (e) {}
+          prompt("Re-attempt code for " + (who2.name || "this student") +
+                 "\n\nRead this out to them. They enter it when they tap Retake Assessment.", c);
+        };
       });
       body.querySelectorAll("[data-revoke]").forEach(function (b) {
         b.onclick = function () { attempts.revoke(b.getAttribute("data-revoke")); renderAdmin(); };
@@ -1824,6 +1943,7 @@ window.DISHA_ELITE = (function () {
     aptitudeBank: APT, streamBank: STREAM_ITEMS,
     select: select, served: served, report: eliteStreamBlock,
     attempts: attempts, admin: openAdmin, newAge: NEWAGE,
+    codes: { for: codeFor, redeem: redeem, contact: contactKey },
     plan: function () { return lastPlan; }
   };
 })();

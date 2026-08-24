@@ -1048,6 +1048,181 @@ window.DISHA_ELITE = (function () {
     return { ok: false, reason: "no-match" };
   }
 
+  /* ================================================================
+     5a. PRE-FLIGHT — confirm class, stream and maths track
+     A stream picked in a hurry at sign-up decides which fields the
+     engine will even consider, and a wrong one quietly removes real
+     options. So the last screen before the paper is a confirmation
+     the student can correct, rather than a value they can never see
+     again.
+     ================================================================ */
+
+  var STREAM_OPTIONS = [
+    "Science (PCM)", "Science (PCB)", "Science (PCMB)",
+    "Commerce (with Maths)", "Commerce (without Maths)",
+    "Arts / Humanities", "Vocational / ITI"
+  ];
+  var CLASS_OPTIONS = ["Class 8", "Class 9", "Class 10", "Class 11", "Class 12", "Passed Class 12"];
+
+  /* CBSE runs two senior-secondary mathematics courses. Core (041) is
+     the course written for students heading to engineering, pure
+     mathematics and the physical sciences; Applied (241) is written
+     for commerce, economics and the social sciences. CBSE states
+     plainly that one is not a substitute for the other, and the 2021
+     UGC advisory asking universities to treat them at par was scoped
+     to humanities and commerce — not to engineering, mathematics or
+     the physical sciences. Recommending an actuarial or B.Stat route
+     to a student on 241 without saying so is a two-year mistake. */
+  var MATHS_OPTIONS = [
+    { v: "core-041",    en: "Core Mathematics (041)",    hi: "कोर गणित (041)" },
+    { v: "applied-241", en: "Applied Mathematics (241)", hi: "एप्लाइड गणित (241)" },
+    { v: "other",       en: "Neither / my board does not split them", hi: "कोई नहीं / मेरा बोर्ड इन्हें अलग नहीं करता" }
+  ];
+  function mathsAsked(stream) {
+    return stream === "Commerce (with Maths)" || stream === "Arts / Humanities";
+  }
+  /* The profiles table has no column for this, and saveProfile can
+     only write the signed-in user's own row, so the maths track is
+     kept with the other local profile overrides. It is asked on the
+     same device that then sits the paper, so that is sufficient. */
+  function mathsTrack(user) {
+    var p = profile(user);
+    if (p.mathsTrack) return p.mathsTrack;
+    var st = String(p.stream || "");
+    if (st.indexOf("Science (PCM") === 0 || st === "Science (PCMB)") return "core-041";
+    if (st === "Commerce (without Maths)") return "none";
+    return "";
+  }
+
+  function saveDetails(user, patch) {
+    var id = (user && user.id) || "anon";
+    setOverride(id, patch);
+    try { if (window.__dishaUser) Object.assign(window.__dishaUser, patch); } catch (e) {}
+    var jobs = [];
+    /* mathsTrack is local-only; klass and stream are real columns */
+    var cloudPatch = {};
+    if (patch.klass != null) cloudPatch.klass = patch.klass;
+    if (patch.stream != null) cloudPatch.stream = patch.stream;
+    try {
+      if (window.DISHA_DB && window.DISHA_DB.accounts && id !== "anon") {
+        jobs.push(window.DISHA_DB.accounts.patch(id, cloudPatch));
+      }
+    } catch (e) {}
+    try {
+      if (Object.keys(cloudPatch).length &&
+          window.DISHA_CLOUD && window.DISHA_CLOUD.enabled && window.DISHA_CLOUD.enabled() &&
+          window.__dishaUser && window.__dishaUser.id === id) {
+        jobs.push(window.DISHA_CLOUD.saveProfile(cloudPatch));
+      }
+    } catch (e) {}
+    return Promise.all(jobs).catch(function () { return null; });
+  }
+
+  var preOverlay = null;
+
+  function closePreflight() {
+    if (preOverlay) { preOverlay.remove(); preOverlay = null; }
+  }
+
+  /* Resolves true to continue into the assessment, false to go back. */
+  function preflight(user, lang) {
+    return new Promise(function (resolve) {
+      var p = profile(user);
+      var senior = classBand(p.klass) === "senior";
+      var sel = { klass: p.klass || "", stream: p.stream || "", mathsTrack: mathsTrack(user) };
+
+      closePreflight();
+      preOverlay = document.createElement("div");
+      preOverlay.id = "disha-preflight";
+      preOverlay.setAttribute("style",
+        "position:fixed;inset:0;background:rgba(46,45,41,.6);z-index:2147483000;" +
+        "display:flex;align-items:flex-start;justify-content:center;overflow:auto;" +
+        "padding:" + (narrow() ? "0" : "24px") + ";-webkit-overflow-scrolling:touch");
+
+      function opt(list, cur, valKey) {
+        return list.map(function (o) {
+          var v = valKey ? o[valKey] : o;
+          var label = valKey ? L(lang, o.en, o.hi) : o;
+          return '<option value="' + esc(v) + '"' + (v === cur ? " selected" : "") + ">" + esc(label) + "</option>";
+        }).join("");
+      }
+      function field(id, label, inner, note) {
+        return '<div style="margin-top:16px"><label for="' + id + '" style="display:block;font-size:12px;' +
+          'font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:' + P.cardinal + '">' +
+          esc(label) + "</label>" + inner +
+          (note ? '<div style="font-size:12px;color:' + P.grey + ';margin-top:5px;line-height:1.5">' + note + "</div>" : "") +
+          "</div>";
+      }
+      var selStyle = 'style="width:100%;box-sizing:border-box;margin-top:6px;padding:11px 10px;' +
+        'font-size:16px;border:1px solid ' + P.hairline + ';border-radius:4px;background:#fff;color:' + P.ink + '"';
+
+      preOverlay.innerHTML =
+        '<div style="background:#fff;max-width:560px;width:100%;box-sizing:border-box;' +
+        'border-radius:' + (narrow() ? "0" : "8px") + ';padding:' + (narrow() ? "18px 16px 40px" : "24px 26px") + ';' +
+        'min-height:' + (narrow() ? "100%" : "auto") + ';font-family:\'Source Sans 3\',-apple-system,sans-serif;color:' + P.ink + '">' +
+          '<h2 style="font-family:\'Source Serif 4\',Georgia,serif;font-size:21px;margin:0;color:' + P.cardinal + '">' +
+            L(lang, "Before you start", "शुरू करने से पहले") + "</h2>" +
+          '<p style="font-size:13.5px;color:' + P.grey + ';line-height:1.6;margin:8px 0 0">' +
+            L(lang, "Check these are right. Your stream decides which questions you are asked and which fields the report can recommend, so a wrong entry here narrows your result.",
+                    "जाँच लें कि ये सही हैं। आपकी स्ट्रीम तय करती है कि कौन-से प्रश्न पूछे जाएँगे और रिपोर्ट कौन-से क्षेत्र सुझा सकती है — ग़लत प्रविष्टि आपका परिणाम सीमित कर देती है।") + "</p>" +
+          field("dpf-klass", L(lang, "Class", "कक्षा"),
+                '<select id="dpf-klass" ' + selStyle + ">" + opt(CLASS_OPTIONS, sel.klass) + "</select>") +
+          (senior
+            ? field("dpf-stream", L(lang, "Stream", "स्ट्रीम"),
+                '<select id="dpf-stream" ' + selStyle + '><option value="">' +
+                esc(L(lang, "Not chosen yet", "अभी तय नहीं")) + "</option>" + opt(STREAM_OPTIONS, sel.stream) + "</select>")
+            : '<div style="font-size:12.5px;color:' + P.grey + ';margin-top:14px;line-height:1.55">' +
+              esc(L(lang, "At your class no stream is assumed — helping you choose one is what this assessment is for.",
+                          "आपकी कक्षा में कोई स्ट्रीम मानी नहीं जाती — स्ट्रीम चुनने में मदद करना ही इस मूल्यांकन का उद्देश्य है।")) + "</div>") +
+          '<div id="dpf-maths-wrap"></div>' +
+          '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:24px">' +
+            '<button id="dpf-go" style="flex:1 1 auto;background:' + P.cardinal + ';color:#fff;border:none;' +
+              'border-radius:4px;padding:13px 18px;font-weight:700;font-size:15px;cursor:pointer">' +
+              esc(L(lang, "Confirm & start", "पुष्टि कर शुरू करें")) + "</button>" +
+            '<button id="dpf-back" style="background:#fff;color:' + P.ink + ';border:1px solid ' + P.hairline + ';' +
+              'border-radius:4px;padding:13px 18px;font-size:15px;cursor:pointer">' +
+              esc(L(lang, "Back", "वापस")) + "</button>" +
+          "</div></div>";
+
+      document.body.appendChild(preOverlay);
+
+      var kEl = preOverlay.querySelector("#dpf-klass");
+      var sEl = preOverlay.querySelector("#dpf-stream");
+      var wrap = preOverlay.querySelector("#dpf-maths-wrap");
+
+      function renderMaths() {
+        var st = sEl ? sEl.value : sel.stream;
+        if (!mathsAsked(st)) { wrap.innerHTML = ""; return; }
+        wrap.innerHTML = field("dpf-maths", L(lang, "Which Mathematics are you taking?", "आप कौन-सा गणित ले रहे हैं?"),
+          '<select id="dpf-maths" ' + selStyle + '><option value="">' +
+          esc(L(lang, "Please choose", "कृपया चुनें")) + "</option>" +
+          opt(MATHS_OPTIONS, sel.mathsTrack, "v") + "</select>",
+          esc(L(lang, "Core (041) and Applied (241) are different courses, and CBSE does not treat one as a substitute for the other. Applied is accepted for commerce and humanities degrees; engineering, BSc Mathematics and B.Stat routes generally require Core. Telling us which you take keeps the report honest.",
+                      "कोर (041) और एप्लाइड (241) अलग पाठ्यक्रम हैं; CBSE एक को दूसरे का विकल्प नहीं मानता। एप्लाइड वाणिज्य एवं मानविकी की डिग्रियों के लिए स्वीकार्य है; इंजीनियरिंग, बीएससी गणित और बी.स्टैट के लिए सामान्यतः कोर आवश्यक है।")));
+      }
+      renderMaths();
+      if (sEl) sEl.onchange = function () { sel.mathsTrack = ""; renderMaths(); };
+
+      function finish(ok) {
+        closePreflight();
+        resolve(!!ok);
+      }
+      preOverlay.querySelector("#dpf-back").onclick = function () { finish(false); };
+      preOverlay.querySelector("#dpf-go").onclick = function () {
+        var mEl = preOverlay.querySelector("#dpf-maths");
+        if (mEl && !mEl.value) {
+          try { alert(L(lang, "Please choose which Mathematics you are taking.", "कृपया चुनें कि आप कौन-सा गणित ले रहे हैं।")); } catch (e) {}
+          return;
+        }
+        var patch = { klass: kEl.value };
+        if (sEl) patch.stream = sEl.value;
+        if (mEl) patch.mathsTrack = mEl.value;
+        else if (sEl && !mathsAsked(sEl.value)) patch.mathsTrack = "";
+        saveDetails(user, patch).then(function () { finish(true); });
+      };
+    });
+  }
+
   /* ---- the gate ---------------------------------------------------
      Every route into the quiz passes through DISHA_CONSENT_UI.gate.
      Wrapping it is the one place that catches "Start Assessment",
@@ -1084,9 +1259,15 @@ window.DISHA_ELITE = (function () {
           }
         }
       } catch (e) {}
-      return orig.call(CU, user, uiLang).then(function (ok) {
-        if (ok) { try { attempts.record(user); } catch (e) {} }
-        return ok;
+      var pre = (user && user.role === "student")
+        ? preflight(user, lang)
+        : Promise.resolve(true);
+      return pre.then(function (go) {
+        if (!go) return false;
+        return orig.call(CU, user, uiLang).then(function (ok) {
+          if (ok) { try { attempts.record(user); } catch (e) {} }
+          return ok;
+        });
       });
     };
     CU.__eliteWrapped = true;
@@ -1227,6 +1408,8 @@ window.DISHA_ELITE = (function () {
             ';color:#2E2D29;border:none;border-radius:4px;padding:9px 10px;font-weight:700;font-size:13px;cursor:pointer">Get code</button>' +
           '<button data-revoke="' + esc(a.id) + '" style="' + w + 'background:#fff;color:' + P.ink +
             ';border:1px solid ' + P.hairline + ';border-radius:4px;padding:9px 10px;font-size:13px;cursor:pointer">Revoke</button>' +
+          '<button data-edit="' + esc(a.id) + '" style="' + w + 'background:#fff;color:' + P.sky +
+            ';border:1px solid ' + P.sky + ';border-radius:4px;padding:9px 10px;font-weight:700;font-size:13px;cursor:pointer">Edit stream</button>' +
           '<button data-reset="' + esc(a.id) + '" style="' + w + 'background:#fff;color:' + P.grey +
             ';border:1px solid ' + P.hairline + ';border-radius:4px;padding:9px 10px;font-size:13px;cursor:pointer">Reset</button>';
       }
@@ -1239,7 +1422,7 @@ window.DISHA_ELITE = (function () {
             '<div style="font-size:12.5px;color:' + P.grey + ';margin-top:2px">' +
               esc(a.mobile || a.email || "no contact on record") + '</div>' +
             '<div style="font-size:12.5px;color:' + P.grey + ';margin-top:2px">' +
-              esc(a.klass || "\u2014") + ' \u00b7 ' + esc(a.stream || "stream not declared") + '</div>' +
+              esc(a.klass || "\u2014") + ' \u00b7 ' + esc(a.stream || "stream not declared") + (profile(a).mathsTrack === 'core-041' ? ' \u00b7 Maths 041' : profile(a).mathsTrack === 'applied-241' ? ' \u00b7 Maths 241' : '') + '</div>' +
             '<div style="font-size:12.5px;color:' + P.grey + ';margin-top:2px">' +
               esc(a.school || "\u2014") + (a.city ? ", " + esc(a.city) : "") + '</div>' +
             '<div style="font-size:13px;margin-top:8px">' + stateHtml(r) +
@@ -1291,6 +1474,34 @@ window.DISHA_ELITE = (function () {
           try { navigator.clipboard && navigator.clipboard.writeText(c); } catch (e) {}
           prompt("Re-attempt code for " + (who2.name || "this student") +
                  "\n\nRead this out to them. They enter it when they tap Retake Assessment.", c);
+        };
+      });
+      body.querySelectorAll("[data-edit]").forEach(function (b) {
+        b.onclick = function () {
+          var id = b.getAttribute("data-edit");
+          var a = rows.filter(function (x) { return x.id === id; })[0];
+          if (!a) return;
+          var list = STREAM_OPTIONS.map(function (o, i) { return (i + 1) + ". " + o; }).join("\n");
+          var ans = prompt("Stream for " + (a.name || "this student") +
+            "\nCurrently: " + (a.stream || "not declared") +
+            "\n\n" + list + "\n0. Clear it\n\nEnter a number:", "");
+          if (ans === null) return;
+          var n = parseInt(ans, 10);
+          if (isNaN(n) || n < 0 || n > STREAM_OPTIONS.length) { alert("Not a valid choice."); return; }
+          var stream = n === 0 ? "" : STREAM_OPTIONS[n - 1];
+          var patch = { stream: stream };
+          if (mathsAsked(stream)) {
+            var m = prompt("Which Mathematics is " + (a.name || "this student") + " taking?\n\n" +
+              "1. Core Mathematics (041)\n2. Applied Mathematics (241)\n3. Neither / board does not split them", "");
+            patch.mathsTrack = { "1": "core-041", "2": "applied-241", "3": "other" }[String(m).trim()] || "";
+          } else {
+            patch.mathsTrack = "";
+          }
+          saveDetails(a, patch).then(function () {
+            alert("Saved" + (cloudOn && window.__dishaUser && window.__dishaUser.id === id
+              ? "." : ". This is stored on this device; ask the student to confirm it on their own phone before they start."));
+            renderAdmin();
+          });
         };
       });
       body.querySelectorAll("[data-revoke]").forEach(function (b) {
@@ -1362,20 +1573,20 @@ window.DISHA_ELITE = (function () {
         r: "BDS, then PG diploma", w: "Government dental colleges, forensic institutes" }
     ],
     eng: [
-      { n: "B.Tech Computer Science with AI & Machine Learning", b: "computing + statistics + domain design",
+      { needs: "041", n: "B.Tech Computer Science with AI & Machine Learning", b: "computing + statistics + domain design",
         r: "JEE Main / Advanced, state CET", w: "IITs, NITs, IIITs, state and private universities" },
-      { n: "B.Tech Robotics & Mechatronics", b: "mechanical + electronics + software",
+      { needs: "041", n: "B.Tech Robotics & Mechatronics", b: "mechanical + electronics + software",
         r: "JEE / state CET", w: "IIT Madras, NITs, VIT, SRM, Manipal" },
-      { n: "Electronics & VLSI / Semiconductor Engineering", b: "physics + chip design",
+      { needs: "041", n: "Electronics & VLSI / Semiconductor Engineering", b: "physics + chip design",
         r: "JEE / state CET; India Semiconductor Mission-linked programmes",
         w: "IITs, NITs, IIITs, designated semiconductor-skilling institutes" },
-      { n: "Energy, Climate & Sustainable Systems Engineering", b: "engineering + climate science + policy",
+      { needs: "041", n: "Energy, Climate & Sustainable Systems Engineering", b: "engineering + climate science + policy",
         r: "JEE / CUET", w: "IIT Bombay, IIT Delhi, TERI SAS, NITs" },
-      { n: "Bioengineering / Medical Devices", b: "engineering + biology",
+      { needs: "041", n: "Bioengineering / Medical Devices", b: "engineering + biology",
         r: "JEE / institute test", w: "IIT Madras, IIT Hyderabad, IIIT, Manipal" },
-      { n: "Quantum Technologies & Computing", b: "physics + computer science",
+      { needs: "041", n: "Quantum Technologies & Computing", b: "physics + computer science",
         r: "JEE / IISER IAT / IISc BS", w: "IISc, IITs, IISERs (National Quantum Mission institutes)" },
-      { n: "B.Tech Smart Mobility / EV Systems", b: "automotive + power electronics + software",
+      { needs: "041", n: "B.Tech Smart Mobility / EV Systems", b: "automotive + power electronics + software",
         r: "JEE / state CET", w: "IITs, NITs, VIT, automotive-cluster institutes" }
     ],
     it: [
@@ -1394,28 +1605,28 @@ window.DISHA_ELITE = (function () {
         r: "CUET / institute test", w: "IIIT Hyderabad, JNU, University of Hyderabad" }
     ],
     sci: [
-      { n: "Integrated BS-MS in Interdisciplinary Sciences", b: "physics + biology + computation",
+      { n: "Integrated BS-MS in Interdisciplinary Sciences", needs: "041", b: "physics + biology + computation",
         r: "IISER Aptitude Test (IAT), JEE channel, or KVPY-successor route",
         w: "IISERs, NISER, IISc" },
-      { n: "B.Sc Computational Biology / Bioinformatics", b: "life sciences + programming",
+      { n: "B.Sc Computational Biology / Bioinformatics", needs: "041-pref", b: "life sciences + programming",
         r: "CUET-UG / institute test", w: "IIIT Hyderabad, IISERs, DU, Manipal" },
-      { n: "Materials Science & Nanotechnology", b: "chemistry + physics + engineering",
+      { n: "Materials Science & Nanotechnology", needs: "041", b: "chemistry + physics + engineering",
         r: "CUET / JEE / IAT", w: "IISc, IITs, central universities" },
-      { n: "Climate & Earth System Science", b: "physics + geography + data",
+      { n: "Climate & Earth System Science", needs: "041", b: "physics + geography + data",
         r: "CUET-UG / IIT integrated programmes", w: "IIT Bhubaneswar, IISc, TERI SAS, IITM Pune links" },
-      { n: "Astronomy & Space Technology", b: "physics + engineering",
+      { n: "Astronomy & Space Technology", needs: "041", b: "physics + engineering",
         r: "IAT / JEE / CUET", w: "IISERs, IIST Thiruvananthapuram, IUCAA-linked programmes" },
-      { n: "Statistics & Data Science (B.Stat / B.Math)", b: "mathematics + inference",
+      { n: "Statistics & Data Science (B.Stat / B.Math)", needs: "041", b: "mathematics + inference",
         r: "ISI Admission Test, CMI entrance", w: "ISI Kolkata/Bengaluru, CMI Chennai" }
     ],
     com: [
-      { n: "B.Sc / BBA Business Analytics", b: "commerce + statistics + software",
+      { n: "B.Sc / BBA Business Analytics", needs: "041-pref", b: "commerce + statistics + software",
         r: "CUET / IPMAT / institute test", w: "IIM Indore & Rohtak (IPM), NMIMS, Christ, Symbiosis" },
-      { n: "Actuarial Science", b: "mathematics + insurance + risk",
+      { n: "Actuarial Science", needs: "041-pref", b: "mathematics + insurance + risk",
         r: "IAI entrance (ACET) alongside a BSc/B.Com", w: "Institute of Actuaries of India, Amity, Christ" },
       { n: "B.Sc Financial Technology (FinTech)", b: "finance + coding + regulation",
         r: "CUET / institute test", w: "Central universities, NMIMS, Symbiosis, private universities" },
-      { n: "Economics with Data Science", b: "economics + econometrics + programming",
+      { n: "Economics with Data Science", needs: "041-pref", b: "economics + econometrics + programming",
         r: "CUET-UG, ISI/CMI entrance for the quantitative track",
         w: "ISI, Ashoka, Azim Premji, DU, Madras School of Economics" },
       { n: "ESG & Sustainable Finance", b: "finance + climate + compliance",
@@ -1763,6 +1974,40 @@ window.DISHA_ELITE = (function () {
     return out;
   }
 
+  /* What the student's mathematics course actually permits.
+     Sourced from the CBSE FAQ on Applied Mathematics (241) and the
+     UGC advisory of September 2021, which asked universities to treat
+     241 at par with 041 for humanities and commerce admissions —
+     explicitly not for engineering, mathematics or physical sciences.
+     The advisory is guidance to universities, not a binding rule, so
+     the report says "verify" rather than "you are eligible".        */
+  function mathsNote(track, top, lang) {
+    if (track === "core-041") {
+      return { tone: "ok", lines: [ L(lang,
+        "You are on Core Mathematics (041). Nothing in this report is closed to you on subject grounds — 041 is the course that keeps engineering, BSc Mathematics, Statistics and the quantitative finance routes open alongside every commerce degree.",
+        "आप कोर गणित (041) पर हैं। विषय के आधार पर इस रिपोर्ट में कुछ भी बंद नहीं है — 041 वही पाठ्यक्रम है जो हर वाणिज्य डिग्री के साथ-साथ इंजीनियरिंग, बीएससी गणित, सांख्यिकी और मात्रात्मक वित्त के रास्ते खुले रखता है।") ] };
+    }
+    if (track !== "applied-241") return null;
+    var lines = [ L(lang,
+      "You are on Applied Mathematics (241). For B.Com, BBA, most Economics programmes and the professional routes (CA, CS, CMA) this is a fully accepted subject — the UGC advised universities in 2021 to treat it at par with Mathematics when calculating aggregate marks for commerce and humanities admissions.",
+      "आप एप्लाइड गणित (241) पर हैं। बी.कॉम, बीबीए, अधिकांश अर्थशास्त्र कार्यक्रमों और व्यावसायिक मार्गों (CA, CS, CMA) के लिए यह पूर्णतः स्वीकृत विषय है — UGC ने 2021 में विश्वविद्यालयों को सलाह दी थी कि वाणिज्य एवं मानविकी प्रवेश में कुल अंक गणना हेतु इसे गणित के समकक्ष माना जाए।") ];
+    lines.push(L(lang,
+      "Three things that advisory does not cover, and that you should plan around: it was scoped to humanities and commerce, not to engineering, mathematics or the physical sciences; it is guidance to universities and not a binding rule, so individual colleges still publish their own criteria; and CBSE states that 041 and 241 are different courses and one is not a substitute for the other, so you cannot switch between them later.",
+      "उस सलाह में तीन बातें शामिल नहीं हैं: यह मानविकी और वाणिज्य तक सीमित थी, इंजीनियरिंग/गणित/भौतिक विज्ञान तक नहीं; यह विश्वविद्यालयों हेतु सलाह है, बाध्यकारी नियम नहीं — कॉलेज अपनी शर्तें रखते हैं; और CBSE के अनुसार 041 व 241 अलग पाठ्यक्रम हैं, एक दूसरे का विकल्प नहीं, इसलिए बाद में बदला नहीं जा सकता।"));
+    var blocked = (NEWAGE[top.id] || []).filter(function (c) { return c.needs === "041"; });
+    if (blocked.length) {
+      lines.push(L(lang,
+        "In your strongest field this matters directly. These routes generally require Core Mathematics: " +
+        blocked.map(function (c) { return c.n; }).join("; ") + ".",
+        "आपके सबसे मज़बूत क्षेत्र में यह सीधे मायने रखता है। इन मार्गों के लिए सामान्यतः कोर गणित आवश्यक है: " +
+        blocked.map(function (c) { return c.n; }).join("; ") + "।"));
+    }
+    lines.push(L(lang,
+      "If any of those is where you actually want to go, the time to move to Core Mathematics is now, in Class 11 — not after the board exam, when it cannot be done. Confirm the requirement on the institution's own admission page before you decide either way.",
+      "यदि आप वास्तव में उन्हीं में से किसी की ओर जाना चाहते हैं, तो कोर गणित पर जाने का समय अभी है — कक्षा 11 में, बोर्ड परीक्षा के बाद नहीं, तब यह संभव नहीं होगा। निर्णय से पहले संस्थान के अपने प्रवेश पृष्ठ पर शर्त की पुष्टि करें।"));
+    return { tone: "warn", lines: lines };
+  }
+
   /* ---- rendering -------------------------------------------------- */
   function reactH(R) {
     if (typeof R === "function") return R;
@@ -1800,7 +2045,15 @@ window.DISHA_ELITE = (function () {
           L(lang, "Blends: ", "संयोजन: ") + c.b + "  ·  " +
           L(lang, "Route: ", "मार्ग: ") + c.r),
         h("div", { className: "sans", style: { fontSize: 12, color: P.grey, marginTop: 2 } },
-          L(lang, "Offered at (indicative): ", "कहाँ उपलब्ध (सांकेतिक): ") + c.w));
+          L(lang, "Offered at (indicative): ", "कहाँ उपलब्ध (सांकेतिक): ") + c.w),
+        c.needs === "041"
+          ? h("div", { className: "sans", style: { fontSize: 12, fontWeight: 700, color: P.cardinal, marginTop: 4 } },
+              L(lang, "Requires Core Mathematics (041)", "कोर गणित (041) आवश्यक"))
+          : c.needs === "041-pref"
+            ? h("div", { className: "sans", style: { fontSize: 12, color: P.cardinal, marginTop: 4 } },
+                L(lang, "Core Mathematics (041) preferred — check the institution",
+                        "कोर गणित (041) वांछित — संस्थान से जाँचें"))
+            : null);
     });
   }
 
@@ -1890,6 +2143,14 @@ window.DISHA_ELITE = (function () {
         ". Prefer this one if the entrance route to your primary field does not open on the first attempt, or if the length of study there does not suit your family's plans.",
         "वैकल्पिक क्षेत्र: " + (alt.name.hi || alt.name.en) + (alt.pct != null ? " (" + alt.pct + "% अनुकूलता)" : "") +
         "। यदि प्रमुख क्षेत्र का प्रवेश-मार्ग पहले प्रयास में न खुले, या वहाँ की पढ़ाई की अवधि परिवार की योजना से मेल न खाए, तो इसे चुनें।"), "elite-alt"));
+    }
+
+    /* ---- mathematics track ---- */
+    var mt = mathsNote(mathsTrack(window.__dishaUser), top, lang);
+    if (mt) {
+      sections.push(head(h, L(lang, "Your mathematics course, and what it permits",
+                                    "आपका गणित पाठ्यक्रम और वह क्या अनुमति देता है")));
+      mt.lines.forEach(function (t, i) { sections.push(para(h, t, "mt" + i)); });
     }
 
     /* ---- the existing full path list ---- */
@@ -1985,6 +2246,9 @@ window.DISHA_ELITE = (function () {
     select: select, served: served, report: eliteStreamBlock,
     attempts: attempts, admin: openAdmin, newAge: NEWAGE,
     codes: { for: codeFor, redeem: redeem, contact: contactKey },
+    preflight: preflight, saveDetails: saveDetails,
+    maths: { track: mathsTrack, note: mathsNote, options: MATHS_OPTIONS, asked: mathsAsked },
+    streams: STREAM_OPTIONS,
     plan: function () { return lastPlan; }
   };
 })();

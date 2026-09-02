@@ -2496,7 +2496,9 @@ window.DISHA_CLOUD = (function () {
     if (a.overseas != null) r.overseas = a.overseas === true || String(a.overseas).toLowerCase() === "yes";
     if (a.overseasCountries != null) r.overseas_countries = a.overseasCountries;
     if (a.overseas_countries != null) r.overseas_countries = a.overseas_countries;
-    if (a.paid != null) r.paid = !!a.paid;
+    /* paid is set by the database only -- the column grant for
+       'authenticated' excludes it, so sending it here would make
+       every profile save fail on a permission error. */
     if (a.plan != null) r.plan = a.plan;
     return r;
   }

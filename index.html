@@ -3019,10 +3019,19 @@ window.DISHA_CLOUD = (function () {
       var row = toRow(fields || {});
       row.id = s.user.id;
       row.email = row.email || s.user.email;
-      return client.from("profiles").upsert(row, { onConflict: "id" }).select().single()
+      /* A patch carrying no name may only UPDATE an existing row. Upsert
+         would happily INSERT id + email and nothing else, which is how a
+         nameless profile ends up in the admin list. */
+      var named = !!String(row.name || "").trim();
+      if (!named) delete row.name;
+      var q = named
+        ? client.from("profiles").upsert(row, { onConflict: "id" })
+        : client.from("profiles").update(row).eq("id", s.user.id);
+      return q.select().maybeSingle()
         .then(function (res) {
-          return res.error ? { ok: false, reason: "save-failed", detail: res.error.message }
-                           : { ok: true, user: fromRow(res.data) };
+          if (res.error) return { ok: false, reason: "save-failed", detail: res.error.message };
+          if (!res.data)  return { ok: false, reason: "no-profile" };
+          return { ok: true, user: fromRow(res.data) };
         });
     }).catch(function (e) { return { ok: false, reason: "unreachable", detail: log("saveProfile", e).message }; });
   }

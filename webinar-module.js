@@ -179,6 +179,35 @@ window.DISHA_WEBINAR = (function () {
   }
   var cloudSeat = null;
 
+  /* ---- session links, held centrally ------------------------------------
+     A link saved in the admin panel has to reach a student on their own
+     phone, so it lives in webinar_sessions (world-readable, admin-writable)
+     and is merged over whatever this browser has stored. */
+  var remote = null;
+  function loadRemote() {
+    return cloud().then(function (c) {
+      if (!c) return null;
+      return c.from("webinar_sessions").select("session_key,zoom_link,seat_cap").then(function (r) {
+        if (!r || r.error || !r.data) return null;
+        var m = {};
+        r.data.forEach(function (row) {
+          m[row.session_key] = { zoom: row.zoom_link || "", cap: Number(row.seat_cap) || 0 };
+        });
+        remote = m;
+        return m;
+      });
+    }).catch(function () { return null; });
+  }
+  function saveRemote(rows) {
+    return cloud().then(function (c) {
+      if (!c) return { ok: false, reason: "cloud-off" };
+      return c.from("webinar_sessions").upsert(rows, { onConflict: "session_key" }).then(function (r) {
+        return r && r.error ? { ok: false, reason: r.error.message } : { ok: true };
+      });
+    }).catch(function () { return { ok: false, reason: "failed" }; });
+  }
+  function remoteAt(key) { return (remote && remote[key]) || null; }
+
   /* ------------------------------------------------------------------ dates */
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function ymd(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
@@ -216,20 +245,44 @@ window.DISHA_WEBINAR = (function () {
   }
   function cap(sessionId) {
     var s = read();
-    return Number(s.caps[sessionId] || SEAT_CAP);
+    if (s.caps[sessionId]) return Number(s.caps[sessionId]);
+    var r = remoteAt(sessionId);
+    if (r && r.cap) return r.cap;
+    return SEAT_CAP;
   }
+  /* Most specific wins: a link for this exact date, then the recurring link
+     for this webinar, then whatever this browser has stored. */
   function zoomFor(sessionId, kind) {
+    var r = remoteAt(sessionId);
+    if (r && r.zoom) return r.zoom;
+    var rec = remoteAt(kind + "-recurring");
+    if (rec && rec.zoom) return rec.zoom;
     var s = read();
     return s.links[sessionId] || s.recurring[kind] || "";
   }
 
   /* ------------------------------------------------------------------ money */
-  function taxOf(net) {
-    try { return PAY().taxOf(net); }
-    catch (e) { return { gross: net, base: net, tax: 0, pct: 0, name: "GST" }; }
+  /* The two fees are the ALL-IN prices a student pays: Rs 99 and Rs 299,
+     tax included. The assessment quotes a net fee and adds tax on top with a
+     rounding step, which would turn 99 into 150 and 299 into 400 — right for
+     the assessment, wrong for an advertised webinar price. So the tax is
+     split back OUT of the fee here and the gross never moves. */
+  function taxOf(fee) {
+    var pct = 0, name = "GST";
+    try { var t = GLB().taxSplit(100); pct = Number(t.pct) || 0; name = t.name || "GST"; } catch (e) {}
+    var gross = Math.round((Number(fee) || 0) * 100) / 100;
+    var base = Math.round((gross / (1 + pct / 100)) * 100) / 100;
+    return { gross: gross, base: base, tax: Math.round((gross - base) * 100) / 100,
+             pct: pct, name: name };
   }
+  /* Always rupees: the fee, the QR and the receipt are one number. Quoting a
+     Dubai visitor "AED 99" for a rupee charge would be simply wrong. */
   function money(n) {
-    try { return GLB().fmtLocal(n); } catch (e) { return "₹" + Number(n).toFixed(0); }
+    var v = Number(n) || 0;
+    var s = (Math.round(v * 100) % 100 === 0)
+      ? v.toLocaleString("en-IN")
+      : v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return "\u20B9" + s;
   }
   function inrOf(net) {
     /* The two fees are quoted in rupees; outside India show the rupee amount
@@ -392,8 +445,9 @@ window.DISHA_WEBINAR = (function () {
     wireShell();
     render();
     try { document.body.style.overflow = "hidden"; } catch (e) {}
-    /* Seat counts arrive late and simply re-render when they do. */
+    /* Seat counts and stored links arrive late and simply re-render. */
     cloudCounts().then(function (m) { if (m && overlay) { cloudSeat = m; render(); } });
+    loadRemote().then(function (m) { if (m && overlay) render(); });
   }
   function close() {
     if (overlay) { overlay.remove(); overlay = null; }
@@ -764,6 +818,7 @@ window.DISHA_WEBINAR = (function () {
       }).join("") +
       '<button class="wb-btn" id="wb-savedates" style="margin-top:12px">' +
       T("Save dates", "तिथियाँ सहेजें") + "</button>" +
+      '<div id="wb-adminmsg" style="font-size:12.5px;color:' + P.grey + ';margin-top:8px;line-height:1.5"></div>' +
 
       '<h4 style="font-family:\'Source Serif 4\',Georgia,serif;font-size:19px;margin:22px 0 6px;color:' + P.ink + '">' +
       T("Registrations on this device", "इस डिवाइस पर पंजीकरण") + " (" + mine.length + ")</h4>" +
@@ -781,22 +836,47 @@ window.DISHA_WEBINAR = (function () {
   function wireAdmin() {
     var q = function (s) { return overlay.querySelector(s); };
     q("#wb-back").onclick = function () { step = "browse"; render(); };
+
+    function say(msg) {
+      var el = q("#wb-adminmsg");
+      if (el) el.textContent = msg;
+    }
+    /* The student's phone reads webinar_sessions, not this browser, so the
+       message says plainly whether the link actually left this device. */
+    function report(r) {
+      say(r && r.ok
+        ? T("Saved for everyone — students booking on any device will see this link.",
+            "सभी के लिए सहेजा गया — किसी भी डिवाइस से बुक करने वाले विद्यार्थी यह लिंक देखेंगे।")
+        : T("Saved on this device only — the shared table could not be reached, so students will get the link by email instead.",
+            "केवल इस डिवाइस पर सहेजा गया — साझा तालिका तक नहीं पहुँच सके, इसलिए विद्यार्थियों को लिंक ईमेल से भेजा जाएगा।"));
+    }
+
     q("#wb-recsave").onclick = function () {
-      var s = read(); s.recurring[active] = q("#wb-rec").value.trim(); write(s);
-      alert(T("Zoom link saved.", "ज़ूम लिंक सहेजा गया।"));
+      var v = q("#wb-rec").value.trim();
+      var s = read(); s.recurring[active] = v; write(s);
+      say(T("Saving…", "सहेजा जा रहा है…"));
+      saveRemote([{ session_key: active + "-recurring", webinar: active,
+                    session_date: null, zoom_link: v, seat_cap: SEAT_CAP,
+                    updated_at: new Date().toISOString() }])
+        .then(function (r) { report(r); return loadRemote(); });
     };
+
     q("#wb-savedates").onclick = function () {
-      var s = read();
+      var s = read(), rows = [];
       Array.prototype.forEach.call(overlay.querySelectorAll("[data-link]"), function (i) {
-        var v = i.value.trim();
-        if (v) s.links[i.getAttribute("data-link")] = v;
-        else delete s.links[i.getAttribute("data-link")];
+        var k = i.getAttribute("data-link"), v = i.value.trim();
+        if (v) s.links[k] = v; else delete s.links[k];
+        var capIn = overlay.querySelector('[data-cap="' + k + '"]');
+        var n = capIn ? parseInt(capIn.value, 10) : 0;
+        if (n > 0) s.caps[k] = n;
+        rows.push({ session_key: k, webinar: active,
+                    session_date: k.slice(k.indexOf("-") + 1),
+                    zoom_link: v || null, seat_cap: n > 0 ? n : SEAT_CAP,
+                    updated_at: new Date().toISOString() });
       });
-      Array.prototype.forEach.call(overlay.querySelectorAll("[data-cap]"), function (i) {
-        var n = parseInt(i.value, 10);
-        if (n > 0) s.caps[i.getAttribute("data-cap")] = n;
-      });
-      write(s); render();
+      write(s);
+      say(T("Saving…", "सहेजा जा रहा है…"));
+      saveRemote(rows).then(function (r) { report(r); return loadRemote(); }).then(function () { render(); });
     };
     var csv = q("#wb-csv");
     if (csv) csv.onclick = function () {

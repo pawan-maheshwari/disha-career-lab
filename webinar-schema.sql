@@ -73,18 +73,35 @@ create policy webinar_seats_read
   on public.webinar_seats for select to anon, authenticated
   using (true);
 
--- 4. Optional: Zoom links held server-side ---------------------------------
--- The app reads links from the admin panel (this browser). If you would
--- rather store them centrally, create this table and read it in the module.
+-- 4. Zoom links & seat caps, shared by every device --------------------------
+-- The admin panel inside the webinar popup writes here, and every visitor
+-- reads from it, so a link pasted once on your phone appears on a student's
+-- confirmation and receipt anywhere in the world.
+--   session_key = 'career-2026-09-19'  -> that one date
+--   session_key = 'career-recurring'   -> every date of that webinar
 create table if not exists public.webinar_sessions (
-  session_key text primary key,
-  webinar     text not null,
-  session_date date not null,
-  zoom_link   text,
-  seat_cap    integer default 100,
-  updated_at  timestamptz default now()
+  session_key  text primary key,
+  webinar      text not null,
+  session_date date,                 -- null for a recurring link
+  zoom_link    text,
+  seat_cap     integer default 100,
+  updated_at   timestamptz default now()
 );
+
 alter table public.webinar_sessions enable row level security;
+
 drop policy if exists webinar_sessions_read on public.webinar_sessions;
 create policy webinar_sessions_read
   on public.webinar_sessions for select to anon, authenticated using (true);
+
+-- Only the admin account may paste or change a link.
+drop policy if exists webinar_sessions_admin_write on public.webinar_sessions;
+create policy webinar_sessions_admin_write
+  on public.webinar_sessions for insert to authenticated
+  with check (auth.jwt() ->> 'email' = 'maheshwari1382@gmail.com');
+
+drop policy if exists webinar_sessions_admin_update on public.webinar_sessions;
+create policy webinar_sessions_admin_update
+  on public.webinar_sessions for update to authenticated
+  using (auth.jwt() ->> 'email' = 'maheshwari1382@gmail.com')
+  with check (auth.jwt() ->> 'email' = 'maheshwari1382@gmail.com');

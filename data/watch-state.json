@@ -1,9 +1,11 @@
 {
   "sources": {
     "mcc-ug": {
-      "fingerprint": null,
+      "fingerprint": "0fab569546e6d2ba",
+      "lastChanged": "2026-09-19",
       "lastChecked": "2026-09-19",
-      "status": "http-403",
+      "readVia": "official",
+      "status": "ok",
       "url": "https://mcc.nic.in/ug-medical-counselling/"
     }
   }

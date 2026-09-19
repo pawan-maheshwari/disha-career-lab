@@ -15,9 +15,3 @@ Generated 2026-09-19 by tools/cutoff_watch.py. Checked 1 source(s).
 - [ ] `agri` — agri — never verified
 - [ ] `def` — def — never verified
 
-## Sources that could not be read
-
-Worth checking by hand — a moved URL is a silent failure otherwise.
-
-- [ ] MCC NEET-UG counselling results — HTTP 403 — https://mcc.nic.in/ug-medical-counselling/
-

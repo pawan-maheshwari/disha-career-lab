@@ -85,8 +85,20 @@ def read_json(path, default=None):
 
 def fetch(url):
     """Return (status, fingerprint, note). Never raises — a dead source is a
-    finding to report, not a crash that kills the whole run."""
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    finding to report, not a crash that kills the whole run.
+
+    Government sites on nic.in refuse plain programmatic requests from cloud
+    IPs. Sending the headers a real browser sends gets past some of them; the
+    ones it does not are handled by the mirror list in cutoffs.json."""
+    req = urllib.request.Request(url, headers={
+        "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                       "Chrome/131.0.0.0 Safari/537.36"),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-IN,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Connection": "close",
+    })
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
             body = r.read()
@@ -110,6 +122,24 @@ def fetch(url):
         text = re.sub(pat, "", text, flags=re.S)
     text = re.sub(r"\s+", " ", text).strip()
     return ("ok", hashlib.sha256(text.encode("utf-8")).hexdigest()[:16], "%d KB" % (len(body) // 1024))
+
+
+def fetch_with_mirrors(src):
+    """Try the official page first, then any mirrors listed for it.
+
+    A mirror is a secondary site that republishes the same figures within a
+    day or two — Careers360, Shiksha and the like. It is NOT a source of
+    truth: it only tells us something has been published, which is all the
+    watcher claims to do. The number still gets read and entered by a person,
+    from whichever page they judge reliable."""
+    status, fp, note = fetch(src["url"])
+    if status == "ok":
+        return status, fp, note, "official"
+    for m in src.get("mirrors", []):
+        m_status, m_fp, m_note = fetch(m)
+        if m_status == "ok":
+            return "ok-via-mirror", m_fp, "%s (official: %s)" % (m_note, note), m
+    return status, fp, note, None
 
 
 def in_season(months, today):
@@ -140,10 +170,11 @@ def main():
         if not (args.all_seasons or in_season(src.get("season"), today)):
             continue
         checked += 1
-        status, fp, note = fetch(src["url"])
+        status, fp, note, used = fetch_with_mirrors(src)
         prev = state["sources"].get(src["id"], {})
         entry = {"url": src["url"], "lastChecked": today.isoformat(),
-                 "status": status, "fingerprint": fp or prev.get("fingerprint")}
+                 "status": status, "readVia": used,
+                 "fingerprint": fp or prev.get("fingerprint")}
 
         if status != "ok":
             errors.append((src, note))
@@ -176,8 +207,10 @@ def main():
                   "to `data/cutoffs.json` (year, quota, category, round, value, url, "
                   "verifiedOn). Do not paste a number you have not seen on the page.", ""]
         for src, when in changed:
-            lines.append("- [ ] **%s** (%s) — last changed %s — %s"
-                         % (src["name"], src["body"], when, src["url"]))
+            via = state["sources"].get(src["id"], {}).get("readVia")
+            tag = "" if via in (None, "official") else "  _(detected via mirror)_"
+            lines.append("- [ ] **%s** (%s) — last changed %s — %s%s"
+                         % (src["name"], src["body"], when, src["url"], tag))
             if src.get("tracks"):
                 lines.append("      affects: %s" % ", ".join(src["tracks"]))
         lines.append("")

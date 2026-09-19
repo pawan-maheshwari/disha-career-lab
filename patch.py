@@ -9,6 +9,7 @@ SRC = "index.html"
 OUT = "index_patched.html"
 MODULE = "webinar-module.js"
 DIMS = "dimensions-module.js"
+EB = "earlybird-module.js"
 
 s = io.open(SRC, encoding="utf-8").read()
 orig_len = len(s)
@@ -106,6 +107,21 @@ s = s.replace(ticker_anchor, ticker_anchor.replace(
     '{style:{background:p.cardinal,',
     '{style:{display:"none",background:p.cardinal,'), 1)
 
+# --------------------------------------------------------------- 2c. early-bird banner
+# It takes the slot the price ticker used to occupy — one static line rather
+# than a moving one, and it deletes itself once the deadline passes.
+eb_anchor = ticker_anchor.replace(
+    '{style:{background:p.cardinal,', '{style:{display:"none",background:p.cardinal,')
+eb_mount = (
+    'l.default.createElement("div",{className:"noprint",'
+    'ref:Eb=>{Eb&&window.DISHA_EARLYBIRD&&window.DISHA_EARLYBIRD.mount(Eb,e)}}),'
+)
+# Insert immediately before the (now hidden) ticker element.
+tick_el = "l.default.createElement(\"div\"," + eb_anchor
+once(s, tick_el, "ticker-element")
+s = s.replace(tick_el, eb_mount + tick_el, 1)
+
+# --------------------------------------------------------------- 2d. injected CSS
 extra_css = (
     '\n<style id="disha-declutter">\n'
     "/* The Join Us bubble overlapped Start My Assessment on a phone; it now\n"
@@ -157,9 +173,67 @@ grid_new = (
 )
 s = s.replace(grid_anchor, grid_new)
 
-# --------------------------------------------------------------- 6. inject the modules
+# --------------------------------------------------------------- 7. price cutover
+# Early-bird pricing ends 30 Sep 2026 (IST). From 1 Oct the table below takes
+# over — one switch, read by every screen, so a price can never change in the
+# hero and miss the payment page. India lands on an exact Rs 2,499 inclusive,
+# which needs the rounding step dropped to 1 (999 + 18% rounded up to 50 is
+# what produced Rs 1,200).
+price_anchor = "  function P() { return PRICING[home()]; }"
+once(s, price_anchor, "price-fn")
+cutover = """  /* ---------------- Early-bird cutover ------------------------------------
+     Until 30 Sep 2026 (IST) the launch prices above apply. From 1 Oct the
+     values below replace them. `save` is recomputed with each price so the
+     comparison panel never claims a saving the new price does not deliver. */
+  (function () {
+    var CUTOVER = Date.parse("2026-10-01T00:00:00+05:30");
+    if (isNaN(CUTOVER) || Date.now() < CUTOVER) return;
+    var NEXT = {
+      /* 2117.80 + 18% = 2499.00 exactly, with roundGrossTo dropped to 1. */
+      "India":        { full: 2117.80, roundGrossTo: 1, save: 1500 },
+      "Nepal":        { full: 2999, save: 2600 },
+      "UAE":          { full: 999,  save: 450 },
+      "South Africa": { full: 1499, save: 775 }
+    };
+    Object.keys(NEXT).forEach(function (k) {
+      if (!PRICING[k]) return;
+      Object.keys(NEXT[k]).forEach(function (f) { PRICING[k][f] = NEXT[k][f]; });
+    });
+  })();
+
+"""
+s = s.replace(price_anchor, cutover + price_anchor, 1)
+
+# --------------------------------------------------------------- 8. comparison copy
+# The panel argued on price alone ("saves a family about Rs 3,000"), which
+# both weakens at the new price and says nothing about what DISHA does
+# differently. It now leads with the difference and keeps price as support.
+cmp_start = 'e==="en"?"Choosing DISHA over a typical "'
+cmp_end = '\\u092C\\u0930\\u093E\\u092C\\u0930\\u0964")'
+a = s.find(cmp_start)
+b = s.find(cmp_end, a)
+if a < 0 or b < 0:
+    sys.exit("ANCHOR comparison-line not found")
+b += len(cmp_end) - 1  # keep the trailing ")"
+cmp_new = (
+    'e==="en"?"Other platforms stop at a personality type. DISHA ends with real colleges '
+    'drawn from government data, the entrance benchmarks to aim at, and a term-by-term plan '
+    '\\u2014 at "+window.DISHA_GLOBAL.price()+", against a typical "'
+    '+window.DISHA_GLOBAL.typicalOther()+" platform.":'
+    '"\\u0905\\u0928\\u094D\\u092F \\u092A\\u094D\\u0932\\u0947\\u091F\\u092B\\u093C\\u0949\\u0930\\u094D\\u092E '
+    '\\u0935\\u094D\\u092F\\u0915\\u094D\\u0924\\u093F\\u0924\\u094D\\u0935 \\u092A\\u094D\\u0930\\u0915\\u093E\\u0930 '
+    '\\u092A\\u0930 \\u0930\\u0941\\u0915 \\u091C\\u093E\\u0924\\u0947 \\u0939\\u0948\\u0902\\u0964 DISHA '
+    '\\u0938\\u0930\\u0915\\u093E\\u0930\\u0940 \\u0921\\u0947\\u091F\\u093E \\u0938\\u0947 \\u0935\\u093E\\u0938\\u094D\\u0924\\u0935\\u093F\\u0915 '
+    '\\u0915\\u0949\\u0932\\u0947\\u091C, \\u0932\\u0915\\u094D\\u0937\\u094D\\u092F \\u092C\\u0928\\u093E\\u0928\\u0947 '
+    '\\u092F\\u094B\\u0917\\u094D\\u092F \\u092A\\u094D\\u0930\\u0935\\u0947\\u0936 \\u092E\\u093E\\u0928\\u0915 '
+    '\\u0914\\u0930 \\u0938\\u0924\\u094D\\u0930-\\u0926\\u0930-\\u0938\\u0924\\u094D\\u0930 \\u092F\\u094B\\u091C\\u0928\\u093E '
+    '\\u0924\\u0915 \\u0932\\u0947 \\u091C\\u093E\\u0924\\u093E \\u0939\\u0948 \\u2014 "'
+    '+window.DISHA_GLOBAL.price(true)+"\\u092E\\u0947\\u0902\\u0964")'
+)
+s = s[:a] + cmp_new + s[b + 1:]
 module = io.open(MODULE, encoding="utf-8").read()
 dims = io.open(DIMS, encoding="utf-8").read()
+eb = io.open(EB, encoding="utf-8").read()
 tail = "</body>"
 idx = s.rfind(tail)
 if idx < 0:
@@ -168,6 +242,7 @@ block = (
     extra_css +
     '\n<script id="disha-webinar-module">\n' + module + "\n</script>\n"
     '<script id="disha-dimensions-module">\n' + dims + "\n</script>\n"
+    '<script id="disha-earlybird-module">\n' + eb + "\n</script>\n"
 )
 s = s[:idx] + block + s[idx:]
 

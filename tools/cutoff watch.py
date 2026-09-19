@@ -37,11 +37,42 @@ import urllib.error
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA = os.path.join(ROOT, "data", "cutoffs.json")
 STATE = os.path.join(ROOT, "data", "watch-state.json")
 QUEUE = os.path.join(ROOT, "cutoff-review.md")
 UA = "DISHA-cutoff-watcher/1.0 (+https://dishacareerlab.com)"
 TIMEOUT = 30
+
+# Where the data file might reasonably live. Checked in order, so a repo that
+# keeps it at the root works as well as one with a data/ folder.
+DATA_CANDIDATES = [
+    os.path.join(ROOT, "data", "cutoffs.json"),
+    os.path.join(ROOT, "cutoffs.json"),
+    os.path.join(os.getcwd(), "data", "cutoffs.json"),
+    os.path.join(os.getcwd(), "cutoffs.json"),
+]
+
+
+def find_data(explicit=None):
+    """Return the path to cutoffs.json, or None. Prints every place it looked
+    so a missing file is a five-second fix rather than a guessing game."""
+    paths = [explicit] if explicit else DATA_CANDIDATES
+    for p in paths:
+        if p and os.path.isfile(p):
+            return p
+    print("Could not find cutoffs.json. Looked in:")
+    for p in paths:
+        print("  -", p)
+    print("\nThe repo layout this expects:")
+    print("  <repo>/data/cutoffs.json")
+    print("  <repo>/tools/cutoff_watch.py")
+    print("  <repo>/.github/workflows/cutoff-watch.yml")
+    print("\nFound at the repo root instead:")
+    try:
+        for name in sorted(os.listdir(ROOT))[:40]:
+            print("  ", name)
+    except OSError:
+        pass
+    return None
 
 
 def read_json(path, default=None):
@@ -89,12 +120,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--all-seasons", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--data", help="explicit path to cutoffs.json")
     args = ap.parse_args()
 
-    cfg = read_json(DATA)
-    if not cfg:
-        print("cutoffs.json not found or unreadable at", DATA)
+    data_path = find_data(args.data)
+    if not data_path:
         return 2
+    cfg = read_json(data_path)
+    if not cfg:
+        print("cutoffs.json at %s is not valid JSON." % data_path)
+        return 2
+    print("Using %s" % data_path)
 
     state = read_json(STATE, {"sources": {}})
     today = dt.date.today()

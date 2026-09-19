@@ -1,0 +1,147 @@
+{
+  "$schema": "disha-cutoffs/v1",
+  "version": 1,
+  "updated": "2026-09-19",
+  "readme": [
+    "Two kinds of number live in this file and they are never mixed.",
+    "  actual   — a closing rank/score that a named source reports for a named",
+    "             year, quota, category and round. It carries a URL and the date",
+    "             it was checked. The app labels it VERIFIED and shows the source.",
+    "  forecast — DISHA's own projection. The app labels it FORECAST. It is never",
+    "             presented as a published cut-off.",
+    "confidence: 'official'   = read from the admitting body (JoSAA, MCC, NTA)",
+    "            'aggregator' = a reputable secondary site quoting official data",
+    "            'conflict'   = sources disagree; the app shows both and says so",
+    "Only tracks with an 'actual' array have been verified. Everything else is",
+    "forecast-only until someone does the work and adds a sourced row."
+  ],
+
+  "tracks": {
+    "iit": {
+      "inst": "IIT Bombay · B.Tech CSE",
+      "unit": { "en": "JEE Advanced closing rank (Open, gender-neutral)", "hi": "JEE एडवांस्ड क्लोज़िंग रैंक (ओपन)" },
+      "lowerIsBetter": true,
+      "note": {
+        "en": "The single most competitive undergraduate seat in India. It has sat in the mid-60s for three straight years, so treat any forecast that moves it sharply with suspicion.",
+        "hi": "भारत की सबसे प्रतिस्पर्धी स्नातक सीट। यह लगातार तीन वर्षों से 60 के दशक के मध्य में है।"
+      },
+      "actual": [
+        { "year": 2024, "quota": "All India", "category": "Open (GN)", "round": "Final", "value": 68,
+          "source": "JoSAA data via Cracku", "url": "https://cracku.in/josaa-previous-year-cutoff/",
+          "verifiedOn": "2026-09-19", "confidence": "aggregator" },
+        { "year": 2025, "quota": "All India", "category": "Open (GN)", "round": "R6 (final)", "value": 66,
+          "source": "JoSAA 2025 round-wise allotment via Cracku", "url": "https://cracku.in/josaa-previous-year-cutoff/",
+          "verifiedOn": "2026-09-19", "confidence": "aggregator" },
+        { "year": 2026, "quota": "All India", "category": "Open (GN)", "round": "R1", "value": 65,
+          "source": "JoSAA 2026 Round 1 seat allotment (reported)", "url": "https://josaa.admissions.nic.in/Applicant/seatallotmentresult/currentorcr.aspx",
+          "verifiedOn": "2026-09-19", "confidence": "aggregator",
+          "caveat": { "en": "Round 1 figure — later rounds can loosen it.", "hi": "राउंड 1 का आँकड़ा — बाद के राउंड में बदल सकता है।" } }
+      ]
+    },
+
+    "it": {
+      "inst": "NIT Trichy · CSE",
+      "unit": { "en": "JEE Main closing rank (General)", "hi": "JEE मेन क्लोज़िंग रैंक (सामान्य)" },
+      "lowerIsBetter": true,
+      "note": {
+        "en": "NITs reserve half the seats for the home state. The Tamil Nadu quota closes roughly 3x looser than the other-state quota, so a single number without a quota is meaningless here.",
+        "hi": "NIT आधी सीटें गृह-राज्य के लिए रखते हैं। तमिलनाडु कोटा अन्य-राज्य कोटे से लगभग 3 गुना आसान है।"
+      },
+      "actual": [
+        { "year": 2025, "quota": "Other State", "category": "General (CRL)", "round": "R4", "value": 1219,
+          "source": "JoSAA 2025 via GetMyUni", "url": "https://www.getmyuni.com/college/national-institute-of-technology-nit-thiruchirapalli-cut-off/jee-main",
+          "verifiedOn": "2026-09-19", "confidence": "conflict",
+          "caveat": { "en": "Another source reports the 2025 other-state final round at 1,449. Both are shown until the JoSAA file is read directly.",
+                      "hi": "एक अन्य स्रोत 2025 के अंतिम राउंड को 1,449 बताता है। JoSAA फ़ाइल देखने तक दोनों दिखाए जाते हैं।" } },
+        { "year": 2025, "quota": "Other State", "category": "General (CRL)", "round": "Final", "value": 1449,
+          "source": "JoSAA final-round data via CATmock", "url": "https://www.catmock.com/blog/nit-trichy-cutoff-2026/",
+          "verifiedOn": "2026-09-19", "confidence": "conflict" },
+        { "year": 2025, "quota": "Home State (TN)", "category": "General (CRL)", "round": "R4", "value": 4463,
+          "source": "JoSAA 2025 via GetMyUni", "url": "https://www.getmyuni.com/college/national-institute-of-technology-nit-thiruchirapalli-cut-off/jee-main",
+          "verifiedOn": "2026-09-19", "confidence": "aggregator" },
+        { "year": 2026, "quota": "All India", "category": "General", "round": "R1", "value": 1219,
+          "source": "Shiksha — NIT Trichy cutoff 2026", "url": "https://www.shiksha.com/university/nit-trichy-national-institute-of-technology-tiruchirappalli-2996/cutoff",
+          "verifiedOn": "2026-09-19", "confidence": "aggregator" },
+        { "year": 2024, "quota": "All India", "category": "General", "round": "R1", "value": 1501,
+          "source": "Shiksha — year-wise round 1 trend", "url": "https://www.shiksha.com/university/nit-trichy-national-institute-of-technology-tiruchirappalli-2996/cutoff",
+          "verifiedOn": "2026-09-19", "confidence": "aggregator" }
+      ]
+    },
+
+    "med": {
+      "inst": "AIIMS New Delhi · MBBS",
+      "unit": { "en": "NEET-UG closing rank, All India Quota (General)", "hi": "NEET-UG क्लोज़िंग रैंक, अखिल भारतीय कोटा (सामान्य)" },
+      "lowerIsBetter": true,
+      "note": {
+        "en": "The closing rank has moved between 47 and 57 over four cycles — it does not trend, it wobbles. A smooth projection through these years would be wrong by construction.",
+        "hi": "चार चक्रों में क्लोज़िंग रैंक 47 से 57 के बीच रही — यह किसी दिशा में नहीं बढ़ती, उतार-चढ़ाव करती है।"
+      },
+      "actual": [
+        { "year": 2023, "quota": "AIQ", "category": "General", "round": "Final", "value": 57,
+          "source": "Shiksha — AIIMS Delhi cutoff trend", "url": "https://www.shiksha.com/college/all-india-institute-of-medical-sciences-delhi-gautam-nagar-24433/cutoff",
+          "verifiedOn": "2026-09-19", "confidence": "aggregator" },
+        { "year": 2024, "quota": "AIQ", "category": "General", "round": "Final", "value": 47,
+          "source": "Shiksha — AIIMS Delhi cutoff trend", "url": "https://www.shiksha.com/college/all-india-institute-of-medical-sciences-delhi-gautam-nagar-24433/cutoff",
+          "verifiedOn": "2026-09-19", "confidence": "aggregator" },
+        { "year": 2025, "quota": "AIQ", "category": "General", "round": "Final", "value": 48,
+          "source": "Careers360 — AIIMS Delhi cutoff 2025", "url": "https://www.careers360.com/university/all-india-institute-of-medical-sciences-new-delhi/cut-off",
+          "verifiedOn": "2026-09-19", "confidence": "aggregator" },
+        { "year": 2026, "quota": "AIQ", "category": "General", "round": "R1", "value": 52,
+          "source": "Shiksha — AIIMS Delhi cutoff 2026", "url": "https://www.shiksha.com/college/all-india-institute-of-medical-sciences-delhi-gautam-nagar-24433/cutoff",
+          "verifiedOn": "2026-09-19", "confidence": "aggregator" }
+      ]
+    },
+
+    "medaiq": {
+      "inst": "MBBS · All India Quota benchmark",
+      "unit": { "en": "NEET-UG closing rank for the last AIQ MBBS seat (General)", "hi": "अंतिम AIQ MBBS सीट की NEET-UG क्लोज़िंग रैंक (सामान्य)" },
+      "lowerIsBetter": true,
+      "note": {
+        "en": "Not a college — the line at which the 15% All India Quota runs out of MBBS seats. The most useful single number for a student asking whether government medicine is reachable at all.",
+        "hi": "यह कोई कॉलेज नहीं — वह सीमा जहाँ 15% अखिल भारतीय कोटे की MBBS सीटें समाप्त होती हैं।"
+      },
+      "actual": [
+        { "year": 2026, "quota": "AIQ (15%)", "category": "General", "round": "R1", "value": 22342, "marks": 572,
+          "source": "MCC round 1 provisional allotment, via ETV Bharat", "url": "https://www.etvbharat.com/en/bharat/neet-ug-round-2-provisional-seat-allotment-result-enn26091007286",
+          "verifiedOn": "2026-09-19", "confidence": "aggregator" },
+        { "year": 2026, "quota": "AIQ (15%)", "category": "General", "round": "R2", "value": 25655, "marks": 566,
+          "source": "MCC round 2 provisional allotment, via ETV Bharat", "url": "https://www.etvbharat.com/en/bharat/neet-ug-round-2-provisional-seat-allotment-result-enn26091007286",
+          "verifiedOn": "2026-09-19", "confidence": "aggregator" }
+      ]
+    },
+
+    "dental": {
+      "inst": "BDS · All India Quota benchmark",
+      "unit": { "en": "NEET-UG closing rank for the last AIQ BDS seat (General)", "hi": "अंतिम AIQ BDS सीट की NEET-UG क्लोज़िंग रैंक (सामान्य)" },
+      "lowerIsBetter": true,
+      "actual": [
+        { "year": 2026, "quota": "AIQ (15%)", "category": "General", "round": "R2", "value": 44053,
+          "source": "MCC round 2 provisional allotment, via ETV Bharat", "url": "https://www.etvbharat.com/en/bharat/neet-ug-round-2-provisional-seat-allotment-result-enn26091007286",
+          "verifiedOn": "2026-09-19", "confidence": "aggregator" }
+      ]
+    }
+  },
+
+  "unverified": {
+    "note": [
+      "These tracks exist in the app as forecasts only. Until a sourced row is",
+      "added above, the app must label them FORECAST and must not call them",
+      "cut-offs. Listed here so the gap is visible rather than forgotten."
+    ],
+    "tracks": ["sci", "creative", "arts", "fashion", "socsci", "law", "commerce", "design", "agri", "def"]
+  },
+
+  "watch": [
+    { "id": "josaa-oc", "name": "JoSAA opening/closing ranks", "body": "JoSAA",
+      "url": "https://josaa.admissions.nic.in/Applicant/seatallotmentresult/currentorcr.aspx",
+      "season": [6, 7, 8], "tracks": ["iit", "it"] },
+    { "id": "mcc-ug", "name": "MCC NEET-UG counselling results", "body": "MCC",
+      "url": "https://mcc.nic.in/ug-medical-counselling/", "season": [8, 9, 10], "tracks": ["med", "medaiq", "dental"] },
+    { "id": "nta-jee", "name": "JEE Main information bulletin & results", "body": "NTA",
+      "url": "https://jeemain.nta.nic.in/", "season": [1, 4, 10, 11], "tracks": ["it"] },
+    { "id": "jeeadv", "name": "JEE Advanced results", "body": "JAB",
+      "url": "https://jeeadv.ac.in/", "season": [5, 6], "tracks": ["iit"] },
+    { "id": "cuet", "name": "CUET-UG results & DU cut-offs", "body": "NTA / DU",
+      "url": "https://cuet.nta.nic.in/", "season": [6, 7, 8], "tracks": ["arts"] }
+  ]
+}

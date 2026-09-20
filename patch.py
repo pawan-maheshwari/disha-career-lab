@@ -10,6 +10,8 @@ OUT = "index_patched.html"
 MODULE = "webinar-module.js"
 DIMS = "dimensions-module.js"
 EB = "earlybird-module.js"
+CO = "cutoff-engine.js"
+SP = "sample-module.js"
 
 s = io.open(SRC, encoding="utf-8").read()
 orig_len = len(s)
@@ -33,6 +35,8 @@ nav_add = (
     '{en:"AI Workshop",hi:"AI \u0915\u093E\u0930\u094D\u092F\u0936\u093E\u0932\u093E",'
     'fn:()=>window.DISHA_WEBINAR.open(e,"ai")},'
     # Join Us keeps a home in the menu now that its floating bubble is gone.
+    '{en:"Sample paper (15 Q)",hi:"\u0928\u092e\u0942\u0928\u093e \u092a\u094d\u0930\u0936\u094d\u0928-\u092a\u0924\u094d\u0930 (15)",'
+    'fn:()=>window.DISHA_SAMPLE.open(e)},'
     '{en:"Join Us",hi:"\u0939\u092e\u0938\u0947 \u091c\u0941\u0921\u093c\u0947\u0902",'
     'fn:()=>{window.DJ&&window.DJ.open()}},'
 )
@@ -231,9 +235,27 @@ cmp_new = (
     '+window.DISHA_GLOBAL.price(true)+"\\u092E\\u0947\\u0902\\u0964")'
 )
 s = s[:a] + cmp_new + s[b + 1:]
+
+# --------------------------------------------------------------- 9. cut-off tracker
+# Sits under the five dimensions: the assessment names a direction, the tracker
+# shows the published closing ranks that direction has to clear.
+once(s, grid_new, "dimensions-mount")
+co_mount = (
+    ',l.default.createElement("div",{id:"disha-cutoffs",style:{marginTop:28},'
+    'ref:Co=>{Co&&window.DISHA_CUTOFFS&&window.DISHA_CUTOFFS.mount(Co,e)}})'
+)
+co_invite = (
+    ',l.default.createElement("div",{id:"disha-sample-invite",style:{marginTop:24},'
+    'ref:Sp=>{Sp&&window.DISHA_SAMPLE&&window.DISHA_SAMPLE.mountInvite(Sp,e)}})'
+)
+s = s.replace(grid_new, grid_new + co_invite + co_mount, 1)
+
+# --------------------------------------------------------------- 10. inject modules
 module = io.open(MODULE, encoding="utf-8").read()
 dims = io.open(DIMS, encoding="utf-8").read()
 eb = io.open(EB, encoding="utf-8").read()
+co = io.open(CO, encoding="utf-8").read()
+sp = io.open(SP, encoding="utf-8").read()
 tail = "</body>"
 idx = s.rfind(tail)
 if idx < 0:
@@ -243,6 +265,8 @@ block = (
     '\n<script id="disha-webinar-module">\n' + module + "\n</script>\n"
     '<script id="disha-dimensions-module">\n' + dims + "\n</script>\n"
     '<script id="disha-earlybird-module">\n' + eb + "\n</script>\n"
+    '<script id="disha-cutoff-engine">\n' + co + "\n</script>\n"
+    '<script id="disha-sample-module">\n' + sp + "\n</script>\n"
 )
 s = s[:idx] + block + s[idx:]
 

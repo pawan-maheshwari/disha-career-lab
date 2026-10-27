@@ -1,14 +1,14 @@
 # Cut-off review queue
 
-Generated 2026-10-23 by tools/cutoff_watch.py. Checked 2 source(s).
+Generated 2026-10-27 by tools/cutoff_watch.py. Checked 2 source(s).
 
 ## Sources that changed since the last run
 
 Open each one, read the published figure, and add a sourced row to `data/cutoffs.json` (year, quota, category, round, value, url, verifiedOn). Do not paste a number you have not seen on the page.
 
-- [ ] **MCC NEET-UG counselling results** (MCC) — last changed 2026-10-20 — https://mcc.nic.in/ug-medical-counselling/
+- [ ] **MCC NEET-UG counselling results** (MCC) — last changed 2026-10-23 — https://mcc.nic.in/ug-medical-counselling/
       affects: med, medaiq, dental
-- [ ] **JEE Main information bulletin & results** (NTA) — last changed 2026-10-20 — https://jeemain.nta.nic.in/
+- [ ] **JEE Main information bulletin & results** (NTA) — last changed 2026-10-23 — https://jeemain.nta.nic.in/
       affects: it
 
 ## Tracks with no verified figure for 2026

@@ -1,17 +1,17 @@
 {
   "sources": {
     "mcc-ug": {
-      "fingerprint": "8c9ad384d0fa2b91",
-      "lastChanged": "2026-10-23",
-      "lastChecked": "2026-10-23",
+      "fingerprint": "853dedf0bdc8af9e",
+      "lastChanged": "2026-10-27",
+      "lastChecked": "2026-10-27",
       "readVia": "official",
       "status": "ok",
       "url": "https://mcc.nic.in/ug-medical-counselling/"
     },
     "nta-jee": {
-      "fingerprint": "31319e369f008766",
-      "lastChanged": "2026-10-23",
-      "lastChecked": "2026-10-23",
+      "fingerprint": "09288d80a6988a13",
+      "lastChanged": "2026-10-27",
+      "lastChecked": "2026-10-27",
       "readVia": "official",
       "status": "ok",
       "url": "https://jeemain.nta.nic.in/"

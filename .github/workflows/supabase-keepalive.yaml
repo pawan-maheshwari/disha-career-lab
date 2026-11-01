@@ -2,11 +2,11 @@ name: Supabase keep-alive
 
 # Free-tier Supabase projects pause after about a week with no database
 # activity, and a paused project makes sign-in fail with "Failed to fetch".
-# One small read every Sunday keeps the project awake. It uses the public
+# One small read every Sunday and Wednesday keeps the project awake. It uses the public
 # anon key already shipped in disha-supabase.json, so no secrets are needed.
 on:
   schedule:
-    - cron: "37 3 * * 0"        # Sundays, 03:37 UTC (09:07 IST)
+    - cron: "37 3 * * 0,3"      # Sundays and Wednesdays, 03:37 UTC (09:07 IST)
   workflow_dispatch:
 
 permissions:

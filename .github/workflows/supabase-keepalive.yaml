@@ -1,0 +1,37 @@
+name: Supabase keep-alive
+
+# Free-tier Supabase projects pause after about a week with no database
+# activity, and a paused project makes sign-in fail with "Failed to fetch".
+# One small read every Sunday keeps the project awake. It uses the public
+# anon key already shipped in disha-supabase.json, so no secrets are needed.
+on:
+  schedule:
+    - cron: "37 3 * * 0"        # Sundays, 03:37 UTC (09:07 IST)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ping the Supabase database
+        run: |
+          URL=$(jq -r .url disha-supabase.json)
+          KEY=$(jq -r .anonKey disha-supabase.json)
+          for i in 1 2 3; do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 30 \
+              "$URL/rest/v1/admissions_news?select=id&limit=1" \
+              -H "apikey: $KEY" -H "Authorization: Bearer $KEY")
+            echo "Attempt $i: HTTP $CODE"
+            if [ "$CODE" -ge 200 ] && [ "$CODE" -lt 500 ]; then
+              echo "Supabase is awake."
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "::error::Supabase did not respond. The project may be paused - restore it from the Supabase dashboard."
+          exit 1

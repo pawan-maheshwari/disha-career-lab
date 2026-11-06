@@ -1,13 +1,6 @@
 # Cut-off review queue
 
-Generated 2026-11-03 by tools/cutoff_watch.py. Checked 1 source(s).
-
-## Sources that changed since the last run
-
-Open each one, read the published figure, and add a sourced row to `data/cutoffs.json` (year, quota, category, round, value, url, verifiedOn). Do not paste a number you have not seen on the page.
-
-- [ ] **JEE Main information bulletin & results** (NTA) — last changed 2026-10-30 — https://jeemain.nta.nic.in/
-      affects: it
+Generated 2026-11-06 by tools/cutoff_watch.py. Checked 1 source(s).
 
 ## Tracks with no verified figure for 2026
 

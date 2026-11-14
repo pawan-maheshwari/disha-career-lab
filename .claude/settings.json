@@ -1,0 +1,45 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tools/claude/peek.sh:*)",
+      "Bash(python3 tools/claude/codemap.py)",
+      "Bash(python3 tools/claude/check_html.py:*)",
+      "Bash(node --check:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(grep:*)",
+      "Bash(wc:*)",
+      "Bash(python3 tools/claude/sync_modules.py:*)"
+    ],
+    "deny": [
+      "Read(./dimensions-module20sep.js)",
+      "Read(./index1608.html)",
+      "Read(./index20sep.html)",
+      "Read(./index_040726.html)",
+      "Read(./index_bac010726.html)",
+      "Read(./index_bac03.html)",
+      "Read(./index_bac070726.html)",
+      "Read(./index_bac280626.html)",
+      "Read(./index_bac_15Aug.html)",
+      "Read(./index_indianV1.0.html)",
+      "Read(./indexbac_02)7.html)",
+      "Read(./webinar-module20sep.js)",
+      "Read(./webinar-schema20sep.sql)",
+      "Edit(./dimensions-module20sep.js)",
+      "Edit(./index1608.html)",
+      "Edit(./index20sep.html)",
+      "Edit(./index_040726.html)",
+      "Edit(./index_bac010726.html)",
+      "Edit(./index_bac03.html)",
+      "Edit(./index_bac070726.html)",
+      "Edit(./index_bac280626.html)",
+      "Edit(./index_bac_15Aug.html)",
+      "Edit(./index_indianV1.0.html)",
+      "Edit(./indexbac_02)7.html)",
+      "Edit(./webinar-module20sep.js)",
+      "Edit(./webinar-schema20sep.sql)",
+      "Read(./assets/**)"
+    ]
+  }
+}

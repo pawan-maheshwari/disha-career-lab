@@ -19,6 +19,7 @@ var ADMIN_EMAIL   = 'YOUR_ADMIN_EMAIL';
 var PER_ADDRESS_DAILY = 5;    // OTPs to any one email/mobile per day
 var PER_ADDRESS_HOURLY = 3;   // burst guard
 var DAILY_TOTAL = 80;         // all OTPs, all users, per day
+var ENROL_DAILY = 60;         // enrolment notices to ADMIN_EMAIL per day
 
 // --- SMS (optional) ------------------------------------------------------
 var SMS_ENABLED   = false;
@@ -82,6 +83,35 @@ function checkLimits_(contact) {
   }
 }
 
+/** Daily cap on enrolment notices, kept apart from the OTP counters so
+ *  a signup never uses up the student's own OTP allowance. */
+function enrolCap_() {
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(5000); } catch (err) { return 'busy'; }
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var day = today_(), k = 'q:' + day + ':enrol';
+    sweep_(props, day);
+    if (count_(props, k) >= ENROL_DAILY) return 'daily-cap-reached';
+    bump_(props, k);
+    return null;
+  } finally {
+    try { lock.releaseLock(); } catch (err) {}
+  }
+}
+
+/** A real signup always carries an account id, a name, a way to reach
+ *  the student and a timestamp. Anything less is a probe or a broken
+ *  client, and must not land in the inbox as an "enrolment". */
+function enrolmentProblem_(d) {
+  function has(v) { return String(v == null ? '' : v).trim() !== ''; }
+  if (!has(d.id))   return 'no-account-id';
+  if (!has(d.name)) return 'no-name';
+  if (!has(d.email) && !has(d.mobile)) return 'no-contact';
+  if (!has(d.date) || isNaN(Date.parse(d.date))) return 'no-date';
+  return null;
+}
+
 function doGet() {
   var quota = -1;
   try { quota = MailApp.getRemainingDailyQuota(); } catch (err) {
@@ -125,7 +155,35 @@ function doPost(e) {
       return out({ ok: false, error: 'unauthorized',
                    detail: 'SHARED_SECRET here does not match the Webhook secret in DISHA settings' });
 
+    if (d.type === 'consent') {
+      var cb =
+        'Dear ' + (d.parentName || 'Parent / Guardian') + ',\n\n' +
+        (d.studentName ? d.studentName + ' has' : 'Your child has') +
+        ' asked to take the DISHA 5-D Career Assessment.\n\n' +
+        'Indian law requires your consent before we process a child\'s personal data.\n\n' +
+        'WHAT WE COLLECT AND WHY\n' + (d.notice || '') + '\n\n' +
+        'YOUR CONSENT CODE: ' + d.code + '\n' +
+        'Give this code to your child, or enter it yourself on the DISHA page.\n' +
+        'It is valid for 10 minutes.\n\n' +
+        'If you do NOT consent, simply ignore this email. Nothing will proceed.\n' +
+        'You can withdraw consent later at any time by replying to this address.\n\n' +
+        'Notice version: ' + (d.noticeVersion || '') + '\n' +
+        '\u2014 DISHA Career Lab';
+      try {
+        MailApp.sendEmail({ to: d.parentEmail,
+          subject: 'Your consent is needed \u2014 DISHA Career Lab',
+          body: cb, name: 'DISHA Career Lab' });
+      } catch (err) {
+        return out({ ok: false, error: 'mail-failed', detail: String(err) });
+      }
+      return out({ ok: true });
+    }
+
     if (d.type === 'enrolment') {
+      var bad = enrolmentProblem_(d);
+      if (bad) return out({ ok: false, error: 'incomplete-enrolment', detail: bad });
+      var capped = enrolCap_();
+      if (capped) return out({ ok: false, error: 'rate-limited', detail: capped });
       var e2 =
         'New DISHA enrolment\n\n' +
         'Name: '      + (d.name   || '') + '\n' +
@@ -174,11 +232,24 @@ function doPost(e) {
                    email: mail, sms: sms, error: mailErr || undefined });
     }
 
+    /* Only the two receipt types reach here. Anything else used to fall
+       through and send a "payment received" email full of "undefined",
+       to the admin and to whatever address the caller supplied. */
+    if (d.type !== 'payment_confirmation' && d.type !== 'webinar_registration')
+      return out({ ok: false, error: 'unknown-type', detail: String(d.type || '') });
+    if (!String(d.receiptNo || '').trim())
+      return out({ ok: false, error: 'no-receipt' });
+
     var r =
       'Hello ' + (d.name || 'there') + ',\n\n' +
       'We have received your payment for the DISHA 5-D Career Assessment.\n\n' +
       'Receipt no: ' + d.receiptNo + '\n' +
-      'Amount: ' + d.amount + ' ' + d.currency + '\n' +
+      'Assessment fee: ' + (d.taxable != null ? d.taxable : d.amount) + ' ' + d.currency + '\n' +
+      (d.taxRate ? 'Add: ' + d.taxName + ' @ ' + d.taxRate + '%: ' + d.taxAmount + ' ' + d.currency + '\n' : '') +
+      'Total paid: ' + d.amount + ' ' + d.currency + '\n' +
+      (d.taxRate ? d.taxName + ' is charged additionally at ' + d.taxRate + '% as per government regulations.\n' : '') +
+      'Billed by: PlanetAI LLP\n' +
+      (d.gstin ? 'Provisional ID / GSTIN / UIN: ' + d.gstin + '\n' : '') +
       'Method: ' + d.method + '\n' +
       (d.promo ? 'Promo code: ' + d.promo + '\n' : '') +
       (d.reference ? 'Reference: ' + d.reference + '\n' : '') +

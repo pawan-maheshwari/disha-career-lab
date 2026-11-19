@@ -41,6 +41,9 @@ package.json: what is committed is what is served. Owner: Pawan Maheshwari.
   `<script id="disha-xyz-module"></script>` right after the other `disha-…` blocks once; register it in
   `tools/claude/sync_modules.py`; add a menu entry `{en:"…",hi:"…",fn:()=>window.DISHA_XYZ.open(e)}`
   next to the existing ones (grep `DISHA_TOPNEWS.open`).
+- **Webhook (Apps Script)** → edit `disha-webhook.gs` only, then `python3 tools/claude/embed_webhook.py`
+  (copies it into `APPS_SCRIPT` in index.html), then `node tools/claude/tests/test_webhook.js` and
+  `node tools/claude/tests/test_enrolment_client.js`. Pawan must paste + redeploy (New version).
 - **New country** → copy `content/uae.js` shape into `content/<country>.js`.
 - **Verify** → `python3 tools/claude/check_html.py index.html` (parses all 24 inline scripts)
   and `python3 tools/claude/sync_modules.py --check`.

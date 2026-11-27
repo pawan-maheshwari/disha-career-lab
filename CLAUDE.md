@@ -44,6 +44,9 @@ package.json: what is committed is what is served. Owner: Pawan Maheshwari.
 - **Webhook (Apps Script)** → edit `disha-webhook.gs` only, then `python3 tools/claude/embed_webhook.py`
   (copies it into `APPS_SCRIPT` in index.html), then `node tools/claude/tests/test_webhook.js` and
   `node tools/claude/tests/test_enrolment_client.js`. Pawan must paste + redeploy (New version).
+- **WhatsApp agent** → facts live in `supabase/functions/whatsapp-agent/knowledge.ts`; run
+  `node tools/claude/tests/test_whatsapp_agent.mjs`; Pawan redeploys with
+  `supabase functions deploy whatsapp-agent --no-verify-jwt`. Setup: `docs/WHATSAPP-AGENT.md`.
 - **New country** → copy `content/uae.js` shape into `content/<country>.js`.
 - **Verify** → `python3 tools/claude/check_html.py index.html` (parses all 24 inline scripts)
   and `python3 tools/claude/sync_modules.py --check`.

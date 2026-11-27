@@ -81,10 +81,14 @@ Optional settings: `CLAUDE_MODEL` (default `claude-haiku-5-5`), `DAILY_LIMIT`
 - **Change a fact** — edit `knowledge.ts`, run the test, `supabase functions deploy whatsapp-agent --no-verify-jwt`.
   Prices must match `earlybird-module.js` `CFG.next` (the test enforces it).
 
-## Costs and limits
+## Costs and limits (checked Nov 2026 — verify before signing up)
 
-- Replies to user-started chats are free on WhatsApp Cloud API (service conversations);
-  the bot never starts conversations, so no template approval is needed.
-- Most messages are answered by the FAQ layer; Claude is called only for the rest
-  (Haiku, ≤400 output tokens per reply).
+- **Meta:** since 1 Oct 2026 bot replies (service messages) are billed per message after
+  **1,000 free per number per month**; India rate ≈ ₹0.115 + GST per delivered message.
+  Incoming messages are free. The bot never starts chats, so no paid templates.
+- **Provider (coexistence only):** e.g. 360dialog ≈ €49/month per number. Going direct with
+  Meta on a separate number has no provider fee.
+- **Supabase:** edge functions run on the existing project's plan.
+- **Claude (optional):** pay-per-use, only for questions the FAQ layer can't answer
+  (≤400 output tokens per reply). Leave `ANTHROPIC_API_KEY` unset to run FAQ-only.
 - The bot can't read images, voice notes or documents — it asks for text.

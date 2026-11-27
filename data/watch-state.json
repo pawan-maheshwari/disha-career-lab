@@ -9,8 +9,9 @@
       "url": "https://mcc.nic.in/ug-medical-counselling/"
     },
     "nta-jee": {
-      "fingerprint": "553f7bc3d36f45f2",
-      "lastChecked": "2026-11-24",
+      "fingerprint": "02ccd30a4b627430",
+      "lastChanged": "2026-11-27",
+      "lastChecked": "2026-11-27",
       "readVia": "official",
       "status": "ok",
       "url": "https://jeemain.nta.nic.in/"

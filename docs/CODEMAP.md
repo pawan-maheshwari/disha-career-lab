@@ -26,14 +26,17 @@ Files with *long lines* contain inline base64/minified blobs — never print tho
 | `patch.py` | 12 KB | 274 |  |
 | `disha-webhook.gs` | 11 KB | 265 |  |
 | `tools/cutoff_watch.py` | 10 KB | 256 |  |
+| `tools/claude/tests/test_whatsapp_agent.mjs` | 6 KB | 122 |  |
 | `earlybird-module.js` | 6 KB | 165 |  |
 | `tools/claude/tests/test_webhook.js` | 6 KB | 80 |  |
 | `tools/claude/codemap.py` | 5 KB | 129 |  |
+| `whatsapp-module.js` | 5 KB | 112 |  |
 | `webinar-schema.sql` | 4 KB | 107 |  |
 | `content/india.js` | 3 KB | 76 |  |
 | `tools/claude/tests/test_enrolment_client.js` | 3 KB | 48 |  |
 | `.github/workflows/cutoff-watch.yaml` | 2 KB | 82 |  |
 | `tools/claude/check_html.py` | 2 KB | 65 |  |
+| `supabase/whatsapp-schema.sql` | 2 KB | 49 |  |
 | `tools/claude/sync_modules.py` | 2 KB | 56 |  |
 | `.github/workflows/supabase-keepalive.yaml` | 1 KB | 42 |  |
 | `tools/claude/embed_webhook.py` | 767 B | 17 |  |
@@ -255,6 +258,8 @@ _(154 structural anchors, first 120 shown — grep for the rest)_
 - functions (13): out@30, today_@35, hour_@36, tag_@39, sweep_@50, count_@60, bump_@61, checkLimits_@64, enrolCap_@88, enrolmentProblem_@106, doGet@115, sendSms@130, doPost@148
 ### `tools/cutoff_watch.py`
 - functions (6): find_data@55, read_json@78, fetch@86, fetch_with_mirrors@127, in_season@145, main@149
+### `tools/claude/tests/test_whatsapp_agent.mjs`
+- functions (6): ok@10, id@13, fake@39, R@41, sign@58, hook@59
 ### `earlybird-module.js`
 - L22 data `CFG`
 - L36 data `KEY`
@@ -263,6 +268,11 @@ _(154 structural anchors, first 120 shown — grep for the rest)_
 - functions (3): load@4, post@21, run@45
 ### `tools/claude/codemap.py`
 - functions (4): tracked_files@47, human@59, scan@63, main@82
+### `whatsapp-module.js`
+- L19 data `CFG`
+- L26 data `GREEN`
+- L46 data `ICON`
+- functions (10): lang@28, T@32, ready@33, link@35, open@39, css@49, pill@66, footer@78, mount@94, deeplink@105
 ### `webinar-schema.sql`
 - L9 table `public.webinar_registrations`
 - L34 table `public.webinar_seats`
@@ -275,5 +285,8 @@ _(154 structural anchors, first 120 shown — grep for the rest)_
 - L104 table `webinar_sessions_admin_update`
 ### `tools/claude/check_html.py`
 - functions (1): check@16
+### `supabase/whatsapp-schema.sql`
+- L9 table `public.wa_contacts`
+- L21 table `public.wa_messages`
 ### `tools/claude/sync_modules.py`
 - functions (1): main@30

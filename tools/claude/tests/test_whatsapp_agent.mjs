@@ -103,6 +103,17 @@ ok((await r.json()).ok && sent.at(-1).to === "919800000002", "admin reply sent")
 r = await agent.handle(new Request("https://x/functions/v1/whatsapp-agent/reply", { method: "POST", headers: { authorization: "Bearer nope" }, body: "{}" }));
 ok(r.status === 401, "admin reply needs token");
 
+// coexistence: a teammate replies from the phone → bot pauses for that chat
+{
+  const raw = JSON.stringify({ entry: [{ changes: [{ field: "smb_message_echoes", value: {
+    message_echoes: [{ from: "916360740608", to: "919800000004", id: "e1", type: "text", text: { body: "Hi, Megha from DISHA" } }] } }] }] });
+  await agent.handle(new Request("https://x/w", { method: "POST", body: raw, headers: { "x-hub-signature-256": sign(raw) } }));
+  ok(contacts["919800000004"]?.paused_until, "echo pauses bot");
+  const n = sent.length;
+  await agent.handle(hook("919800000004", "thanks, and the fee?", "m7"));
+  ok(sent.length === n, "bot quiet after human replied from app");
+}
+
 // no API key → fallback text, no crash
 const noKey = createAgent({ ...env, ANTHROPIC_API_KEY: "" }, fake);
 await noKey.handle(hook("919800000003", "Tell me something about quantum biology careers in Finland please now", "m6"));

@@ -19,7 +19,7 @@ window.DISHA_WHATSAPP = (function () {
   var CFG = {
     /* WhatsApp Business number, digits only with country code, e.g. "919876543210".
        Empty = every entry point stays hidden. */
-    number: "",
+    number: "916360740608",
     hello: { en: "Hi DISHA! I have a question.", hi: "नमस्ते DISHA! मेरा एक प्रश्न है।" }
   };
 

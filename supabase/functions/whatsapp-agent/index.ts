@@ -235,6 +235,17 @@ export function createAgent(env: Env, fetchImpl: Fetch = fetch) {
     return { replied: source };
   }
 
+  /* --- a reply typed on the phone (coexistence echo) */
+  async function humanEcho(e: any) {
+    const waId = String(e.to || "").replace(/\D/g, "");
+    if (!waId) return;
+    await logOut(waId, textOf(e) ?? `[${e.type}]`, "human-app");
+    await upsertContact({
+      wa_id: waId, needs_human: false,
+      paused_until: new Date(Date.now() + pauseHours * 3600e3).toISOString(),
+    });
+  }
+
   /* --- HTTP entry */
   async function handle(req: Request): Promise<Response> {
     const url = new URL(req.url);
@@ -275,6 +286,12 @@ export function createAgent(env: Env, fetchImpl: Fetch = fetch) {
         const names: Record<string, string> = {};
         for (const ct of v.contacts || []) names[ct.wa_id] = ct.profile?.name;
         for (const m of v.messages || []) jobs.push(handleMessage(m, names[m.from]).catch((e) => console.error("handle", e)));
+        /* Coexistence: a teammate replied from the WhatsApp Business app on the
+           phone (webhook field "smb_message_echoes"). Log it and pause the bot
+           for that chat so it doesn't talk over the human. */
+        if (ch.field === "smb_message_echoes") {
+          for (const e of v.message_echoes || []) jobs.push(humanEcho(e).catch((err) => console.error("echo", err)));
+        }
         /* v.statuses (sent/delivered/read) are ignored */
       }
     }

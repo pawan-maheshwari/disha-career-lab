@@ -20,7 +20,24 @@ WhatsApp user ─► Meta Cloud API ─► Supabase Edge Function  whatsapp-agen
 | `whatsapp-module.js` | Site entry points (footer link, desktop pill, `#whatsapp` deep link) — hidden until `CFG.number` is set |
 | `tools/claude/tests/test_whatsapp_agent.mjs` | `node tools/claude/tests/test_whatsapp_agent.mjs` |
 
-## One-time setup (~45 min)
+## DISHA's number: +91 63607 40608 (WhatsApp Business app → coexistence)
+
+The number stays on the WhatsApp Business app **and** gets Cloud API access, so
+the bot answers automatically while the team can still reply from the phone.
+Meta only allows this through a provider that supports coexistence onboarding
+(e.g. 360dialog, Wati, Twilio, Infobip), not the standard Meta signup:
+
+- The number must have been active in the Business app for 7+ days, app version 2.24.17+.
+- In the provider's signup choose **"Connect your existing WhatsApp Business app"**, enter
+  the number, scan the QR code from the app on the phone. Do **not** delete the app account.
+- Open the app at least once every 13 days, or Meta deactivates coexistence.
+- Subscribe the webhook to **messages** and **smb_message_echoes**. When anyone replies
+  from the phone, the bot pauses for that chat for `BOT_PAUSE_HOURS`; "menu" resumes it.
+- If the provider gives you its own send URL/key instead of a Meta token, set
+  `WA_ACCESS_TOKEN` / `WA_PHONE_NUMBER_ID` from it; if its API differs from Meta's
+  Cloud API format, tell Claude which provider — `send()` in index.ts is the only change.
+
+## One-time setup (~45 min, standard Cloud API — use steps 2–7 with coexistence too)
 
 1. **Meta** — at developers.facebook.com create a *Business* app → add **WhatsApp**.
    Link the PlanetAI LLP Business portfolio, add and verify a phone number that is

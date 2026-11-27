@@ -23,6 +23,7 @@ MODULES = {
     "disha-v2-layer": "disha-v2-layer.js",
     "disha-elite-layer": "disha-elite-layer.js",
     "disha-bank-500": "disha-bank-500.js",
+    "disha-whatsapp-module": "whatsapp-module.js",
 }
 
 
